@@ -210,6 +210,13 @@ export function buildShadowMage({ hiDetail = true } = {}) {
     if (front && y > 1.18 && y < 1.44 && ax > w + 0.022 && ax < w + 0.085) {
       return S_(mixc(C.coat, C.coatDark, k), 0.62, 0, PATTERN.brocade, 0.05);
     }
+    // espalda: paño central de brocado violeta desde la capucha hasta el cinturón, más ancho arriba,
+    // con filete de plata a los lados (como la espalda de la lámina)
+    if (z < -0.05 && y > 1.03 && y < 1.4) {
+      const pw = 0.032 + (y - 1.03) * 0.12;
+      if (ax < pw - 0.004) return vestC(0.15 + n * 0.35, 0.1);
+      if (ax < pw) return silver(0.35 + n * 0.3);
+    }
     // costura central de la espalda y pinzas
     if (z < -0.06 && ax < 0.004 && y < 1.4) k += 0.45;
     return leather(k);
@@ -937,7 +944,7 @@ function buildHead(pos, rigidMat) {
 
   // Barba corta y recortada: bigote unido a la perilla y línea de la mandíbula; mejillas con sombra
   // de barba (pintada). El relieve es un desplazamiento de unos milímetros, no un volumen aparte.
-  const cheekLine = (ax) => 1.6285 + 0.05 * Math.pow(smoothstep(0.019, 0.07, ax), 0.75);
+  const cheekLine = (ax) => 1.631 + 0.056 * Math.pow(smoothstep(0.019, 0.07, ax), 0.75);
   const beardMask = (x, y, z) => {
     const ax = Math.abs(x);
     if (z < -0.035) return 0;
@@ -963,14 +970,14 @@ function buildHead(pos, rigidMat) {
     const ax = Math.abs(x);
     const goatee = smoothstep(0.034, 0.022, ax) * smoothstep(1.565, 1.585, y);
     const must = ax < 0.03 && y > 1.633 ? 1 : 0;
-    return Math.max(goatee, must, 0.45);
+    return Math.max(goatee, must, 0.62);
   };
   const browMask = (x, y, z) => {
     const ax = Math.abs(x);
     if (z < 0.05 || ax < 0.006 || ax > 0.063) return 0;
     // ceja recta y poblada junto a la nariz, se afina y baja hacia la sien
     const yb = 1.7105 + 0.0028 * Math.exp(-(((ax - 0.034) / 0.014) ** 2)) - Math.max(0, ax - 0.048) * 0.28;
-    const th = 0.0062 - (ax - 0.008) * 0.06;
+    const th = 0.0074 - (ax - 0.008) * 0.065;
     const e = Math.abs(y - yb) / Math.max(th, 0.0014);
     return (1 - smoothstep(0.5, 1.05, e)) * smoothstep(0.007, 0.012, ax);
   };
@@ -1053,7 +1060,7 @@ function buildHead(pos, rigidMat) {
     if (root > 0) { c = mixc(c, mulc(C.hair, 0.9), root * 0.35); hair = Math.max(hair, root * 0.9); }
     // cejas: vello denso (trazos en el sombreador) sobre una sombra suave
     const bw = clamp(browMask(x, y, z) * (0.75 + n3 * 0.4), 0, 1);
-    if (bw > 0.02) { c = mixc(c, mulc(C.skinDark, 0.75), bw * 0.4); hair = Math.max(hair, bw); }
+    if (bw > 0.02) { c = mixc(c, mulc(C.skinDark, 0.55), bw * 0.6); hair = Math.max(hair, bw); }
     // barba de pocos días: densidad irregular, plena en bigote y perilla; la piel bajo el vello toma
     // un tono gris azulado (sombra de barba) y los pelos los dibuja el sombreador
     const b = isLip ? 0 : beardMask(x, y, z);
@@ -1061,8 +1068,8 @@ function buildHead(pos, rigidMat) {
     if (shadowZone > 0.01) c = mixc(c, mixc(C.skinDark, [0.05, 0.045, 0.05], 0.5), shadowZone * 0.3 * (0.75 + n3 * 0.5));
     if (b > 0.02) {
       const thick = beardThick(x, y, z);
-      const dens = clamp(b * (0.42 + 0.55 * thick) * (0.8 + n2 * 0.3), 0, 1);
-      c = mixc(c, mixc(C.skinDark, [0.045, 0.035, 0.03], 0.45), dens * 0.5);
+      const dens = clamp(b * (0.55 + 0.45 * thick) * (0.8 + n2 * 0.3), 0, 1);
+      c = mixc(c, mixc(C.skinDark, [0.045, 0.035, 0.03], 0.55), dens * 0.62);
       hair = Math.max(hair, dens);
     }
     return { c, r, m: 0, p, w: hair > 0.01 ? 1 + hair : 0.3 };

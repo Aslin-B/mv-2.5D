@@ -52,16 +52,76 @@ function capeTexture({ base = '#365456', hem = '#3d2c1f', line = '#9a7a4e', ragg
   return t;
 }
 
-// Faldones de abrigo: cuero carbón con veteado, bordado de volutas plateadas junto a la abertura
-// y en el bajo. Devuelve color, relieve (bordado en alto) y rugosidad/metal (canales G/B).
+// Faldones de abrigo: cuero carbón con veteado y repujado tono sobre tono; bordado de plata en
+// los dos cantos de cada faldón, una enredadera de volutas que baja por el centro y una cenefa en el
+// bajo (como los faldones de la lámina). Devuelve color, relieve (bordado en alto) y
+// rugosidad/metal (canales G/B). Cada faldón ocupa media textura (u 0–0,5 y 0,5–1).
 function coatTextures({ base = '#29262c', line = '#b3b0b8' } = {}) {
-  const W = 256, H = 512;
+  const W = 512, H = 1024;
   const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
-  const col = mk(), bump = mk(), orm = mk();
+  const col = mk(), bump = mk(), orm = mk(), mask = mk();
   const cc = col.getContext('2d'), bc = bump.getContext('2d'), oc = orm.getContext('2d');
+  // máscara del bordado dibujada con trazos (blanco = hilo de plata)
+  const m = mask.getContext('2d');
+  m.strokeStyle = '#fff'; m.fillStyle = '#fff'; m.lineCap = 'round'; m.lineJoin = 'round';
+  let seed = 3;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+  const hemTop = H * (1 - 0.1), hemBot = H * (1 - 0.018);
+  // voluta: espiral que se enrosca desde (x, y) hacia un lado
+  const curl = (x, y, ang, r, dir, w) => {
+    m.lineWidth = w;
+    m.beginPath();
+    for (let i = 0; i <= 28; i++) {
+      const t = i / 28, a = ang + dir * t * Math.PI * 2.2, rr = r * (1 - t * 0.78);
+      const px = x + Math.cos(ang) * r * t * 0.6 + Math.cos(a) * rr * t, py = y + Math.sin(ang) * r * t * 0.6 + Math.sin(a) * rr * t;
+      if (i === 0) m.moveTo(px, py); else m.lineTo(px, py);
+    }
+    m.stroke();
+  };
+  // cantos: doble filete y cadena de volutas pequeñas entre ellos, a ambos lados de cada costura
+  for (const ex of [0, W / 2, W]) {
+    for (const sd of [-1, 1]) {
+      const x1 = ex + sd * 7, x2 = ex + sd * 30;
+      if (x1 < 0 || x1 > W) continue;
+      m.lineWidth = 2;
+      for (const xx of [x1, x2]) { m.beginPath(); m.moveTo(xx, 40); m.lineTo(xx, hemTop); m.stroke(); }
+      for (let y = 52; y < hemTop - 20; y += 26) curl((x1 + x2) / 2, y, sd > 0 ? -Math.PI / 2 : Math.PI / 2, 10, (y / 26) % 2 ? 1 : -1, 1.6);
+    }
+  }
+  // enredadera central de cada faldón: tallo ondulado con volutas y hojas alternas
+  for (const cx of [W / 4, (3 * W) / 4]) {
+    const ph = rnd() * 6.28;
+    const sx = (y) => cx + Math.sin(y * 0.011 + ph) * 22;
+    m.lineWidth = 3;
+    m.beginPath();
+    for (let y = 90; y <= hemTop - 30; y += 4) { if (y === 90) m.moveTo(sx(y), y); else m.lineTo(sx(y), y); }
+    m.stroke();
+    let side = 1;
+    for (let y = 120; y < hemTop - 60; y += 70 + rnd() * 20) {
+      const x = sx(y);
+      // rama que se abre y termina en voluta
+      const bx = x + side * (34 + rnd() * 12), by = y + 22;
+      m.lineWidth = 2.2;
+      m.beginPath(); m.moveTo(x, y); m.quadraticCurveTo(x + side * 20, y - 6, bx, by); m.stroke();
+      curl(bx, by, side > 0 ? 0.3 : Math.PI - 0.3, 16 + rnd() * 6, side, 2);
+      // hoja apuntada al otro lado
+      m.beginPath();
+      m.moveTo(x, y + 10);
+      m.quadraticCurveTo(x - side * 16, y + 4, x - side * 26, y + 18);
+      m.quadraticCurveTo(x - side * 12, y + 22, x, y + 10);
+      m.fill();
+      side = -side;
+    }
+  }
+  // cenefa del bajo: dos filetes y una onda de volutas encadenadas
+  m.lineWidth = 2.5;
+  for (const y of [hemTop, hemBot]) { m.beginPath(); m.moveTo(0, y); m.lineTo(W, y); m.stroke(); }
+  for (let x = 10; x < W; x += 30) curl(x, (hemTop + hemBot) / 2 + 4, -Math.PI / 2, 11, (x / 30) % 2 ? 1 : -1, 1.8);
+  const md = m.getImageData(0, 0, W, H).data;
+
   const ci = cc.createImageData(W, H), bi = bc.createImageData(W, H), oi = oc.createImageData(W, H);
   const b = new THREE.Color(base), l = new THREE.Color(line);
-  const hh = (i, j) => { const s = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return s - Math.floor(s); };
+  const hh = (i, j) => { const s2 = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return s2 - Math.floor(s2); };
   const fil = (u, v, w) => {
     const i = Math.floor(u), j = Math.floor(v);
     let fu = u - i; const fv = v - j;
@@ -71,25 +131,23 @@ function coatTextures({ base = '#29262c', line = '#b3b0b8' } = {}) {
   };
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = (y * W + x) * 4;
-    const u = x / (W - 1), v = 1 - y / (H - 1);   // v = 1 arriba (cintura), 0 en el bajo
-    // grano y manchas del cuero
-    const g = 0.86 + 0.14 * Math.random() * Math.random() + 0.06 * Math.sin(x * 0.21 + Math.sin(y * 0.05) * 3) * Math.sin(y * 0.09);
-    let r = b.r * g, gg = b.g * g, bb = b.b * g;
-    let emb = 0;
-    // bordado: banda junto a la abertura central (u ≈ 0,5), banda del bajo y un filete fino
-    const du = Math.abs(u - 0.5);
-    const band = du > 0.012 && du < 0.06 ? fil(du / 0.024 + 0.3, v / 0.012, 0.11) : 0;
-    const hem = v > 0.02 && v < 0.085 ? fil(u / 0.012, (v - 0.02) / 0.022 + 0.2, 0.11) : 0;
-    const pip = Math.abs(du - 0.07) < 0.003 || Math.abs(v - 0.1) < 0.002 ? 0.8 : 0;
-    emb = Math.max(band, hem, pip);
-    if (du < 0.012 || v < 0.018) { r *= 0.55; gg *= 0.55; bb *= 0.55; }   // canto oscuro
-    r = r * (1 - emb) + l.r * emb * (0.75 + Math.random() * 0.25);
-    gg = gg * (1 - emb) + l.g * emb * (0.75 + Math.random() * 0.25);
-    bb = bb * (1 - emb) + l.b * emb * (0.75 + Math.random() * 0.25);
+    // grano y manchas del cuero; repujado tono sobre tono (volutas grandes, solo relieve y sombra)
+    const g = 0.86 + 0.14 * Math.random() * Math.random() + 0.06 * Math.sin(x * 0.11 + Math.sin(y * 0.025) * 3) * Math.sin(y * 0.045);
+    const rep = fil(x / 46, y / 46, 0.07) * (y > 60 && y < hemTop - 10 ? 1 : 0);
+    const k = g * (1 - rep * 0.12);
+    let r = b.r * k, gg = b.g * k, bb = b.b * k;
+    const emb = md[i] / 255;
+    const u = x / (W - 1);
+    const du = Math.min(Math.abs(u), Math.abs(u - 0.5), Math.abs(u - 1));
+    if (du < 0.006 || y > H - 12) { r *= 0.55; gg *= 0.55; bb *= 0.55; }   // canto oscuro
+    const sh = 0.72 + Math.random() * 0.28;
+    r = r * (1 - emb) + l.r * emb * sh;
+    gg = gg * (1 - emb) + l.g * emb * sh;
+    bb = bb * (1 - emb) + l.b * emb * sh;
     ci.data[i] = Math.min(255, r * 255); ci.data[i + 1] = Math.min(255, gg * 255); ci.data[i + 2] = Math.min(255, bb * 255); ci.data[i + 3] = 255;
-    const h = 0.35 + emb * 0.55 + (Math.random() - 0.5) * 0.08;
+    const h = 0.35 + emb * 0.5 + rep * 0.12 + (Math.random() - 0.5) * 0.08;
     bi.data[i] = bi.data[i + 1] = bi.data[i + 2] = h * 255; bi.data[i + 3] = 255;
-    oi.data[i] = 255; oi.data[i + 1] = (0.62 - emb * 0.3) * 255; oi.data[i + 2] = emb * 255; oi.data[i + 3] = 255;
+    oi.data[i] = 255; oi.data[i + 1] = (0.66 - emb * 0.3 - rep * 0.08) * 255; oi.data[i + 2] = emb * 255; oi.data[i + 3] = 255;
   }
   cc.putImageData(ci, 0, 0); bc.putImageData(bi, 0, 0); oc.putImageData(oi, 0, 0);
   const tex = (c, srgb) => { const t = new THREE.CanvasTexture(c); if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; };
