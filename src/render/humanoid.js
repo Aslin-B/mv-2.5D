@@ -353,17 +353,21 @@ export function mergeRigidPieces(root) {
   for (const bone of bones) {
     const groups = new Map();
     for (const c of bone.children) {
-      if (!c.isMesh || c.isSkinnedMesh || c.children.length || c.userData.noMerge) continue;
-      const key = `${c.material.uuid}|${c.castShadow}|${c.receiveShadow}`;
+      // las piezas con nivel de detalle se fusionan solo con las de su mismo nivel
+      const lod = c.userData.lod || '';
+      if (!c.isMesh || c.isSkinnedMesh || c.children.length || (c.userData.noMerge && !lod)) continue;
+      const key = `${c.material.uuid}|${c.castShadow}|${c.receiveShadow}|${lod}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(c);
     }
     for (const list of groups.values()) {
       before += list.length;
       if (list.length < 2) { after += list.length; continue; }
+      // si todas las piezas tienen índice se conserva (las mallas SDF finas triplicarían vértices)
+      const indexed = list.every((m) => m.geometry.index);
       const geos = list.map((m) => {
         m.updateMatrix();
-        const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+        const g = indexed || !m.geometry.index ? m.geometry.clone() : m.geometry.toNonIndexed();
         g.applyMatrix4(m.matrix);
         for (const k of Object.keys(g.attributes)) if (!keep.includes(k)) g.deleteAttribute(k);
         return g;
@@ -372,6 +376,7 @@ export function mergeRigidPieces(root) {
       if (!merged) { after += list.length; continue; }
       const mesh = new THREE.Mesh(merged, list[0].material);
       mesh.castShadow = list[0].castShadow; mesh.receiveShadow = list[0].receiveShadow;
+      if (list[0].userData.lod) { mesh.userData.lod = list[0].userData.lod; mesh.userData.noMerge = true; mesh.visible = list[0].visible; }
       for (const m of list) bone.remove(m);
       bone.add(mesh);
       after++;

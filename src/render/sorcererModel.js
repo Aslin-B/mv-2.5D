@@ -76,6 +76,7 @@ export function buildSorcerer() {
     tris -= hi.indices.length / 3;
     trisHi += hi.indices.length / 3 - lo.indices.length / 3;
     mh.userData.noMerge = true; ml.userData.noMerge = true;
+    mh.userData.lod = 'hi'; ml.userData.lod = 'lo';
     lods.hi.push(mh); lods.lo.push(ml);
     breakdown[key] = (breakdown[key] || 0) + lo.indices.length / 3;
     return ml;
@@ -382,6 +383,9 @@ export function buildSorcerer() {
   };
 
   const merged = mergeRigidPieces(ch.root);
+  // tras fusionar por hueso, las listas de detalle apuntan a las mallas fusionadas
+  lods.hi.length = 0; lods.lo.length = 0;
+  ch.root.traverse((o) => { if (o.userData.lod) lods[o.userData.lod].push(o); });
   const setDetail = (hi) => {
     for (const o of lods.hi) o.visible = hi;
     for (const o of lods.lo) o.visible = !hi;

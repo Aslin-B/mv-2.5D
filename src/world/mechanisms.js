@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { buildClavija } from '../render/heroModel.js';
-import { buildWheel } from '../render/architecture.js';
+import { buildWheel, mergeByMaterial } from '../render/architecture.js';
 import { clamp, smoothstep, easeInOutSine } from '../core/math.js';
 
 // Mecanismos del nivel: estados explícitos y datos de colisión separados de la malla (biblia §20.4).
@@ -369,6 +369,7 @@ export class SocketGate {
       spike.position.set(gateX0 + (i + 0.5) * (w / 5), y0 - 0.1, -0.2);
       this.gateGroup.add(spike);
     }
+    mergeByMaterial(this.gateGroup);
     game.scene.add(this.gateGroup);
     // Rueda dentada y encaje en el muro
     this.wheel = buildWheel(1.15, 0.35, { woodUV: mats.woodUV, bronze: mats.bronze }, 8);

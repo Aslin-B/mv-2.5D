@@ -72,20 +72,22 @@ export function stoneAshlar(size = 1024, seed = 1, opts = {}) {
       const n1 = fbm2(x / size * 16, y / size * 16, 4, 16, seed + 3);
       const ex = Math.min(fx, 1 - fx) * bw, ey = Math.min(fy, 1 - fy) * rowH;
       const edge = Math.min(ex, ey) + (n1 - 0.5) * 10;
-      const mortar = edge < 3.2 ? 1 : 0;
-      const bevel = Math.min(1, Math.max(0, (edge - 2) / 14));
+      // junta de ~3 cm: con la escala del nivel (baldosa de 2,4 m) ocupa 1–2 px en pantalla
+      const mortar = edge < 9 ? 1 : 0;
+      const bevel = Math.min(1, Math.max(0, (edge - 8) / 16));
       const chip = fbm2(x / size * 40, y / size * 40, 3, 40, seed + 5);
       const grain = fbm2(x / size * 64, y / size * 64, 4, 64, seed + 9);
       const big = fbm2(x / size * 6, y / size * 6, 3, 6, seed + 13);
       let height = mortar ? 0.05 + chip * 0.05 : 0.45 + bevel * 0.4 + (grain - 0.5) * 0.18 + (big - 0.5) * 0.15;
       if (!mortar && chip > 0.68 && edge < 22) height -= (chip - 0.68) * 1.5; // desconchones en aristas
       h[y * size + x] = height;
-      const tone = 0.82 + id * 0.3 + (big - 0.5) * 0.25 + (grain - 0.5) * 0.18;
+      // las aristas se oscurecen hacia la junta: la sillería se lee a distancia como líneas nítidas
+      const tone = (0.82 + id * 0.3 + (big - 0.5) * 0.25 + (grain - 0.5) * 0.18) * (0.74 + 0.26 * bevel);
       const w = Math.max(0, Math.min(1, id * 0.9 + (big - 0.5)));
       let cr = (base[0] + (warm[0] - base[0]) * w) * tone;
       let cg = (base[1] + (warm[1] - base[1]) * w) * tone;
       let cb = (base[2] + (warm[2] - base[2]) * w) * tone;
-      if (mortar) { cr = 0.33 + chip * 0.08; cg = 0.31 + chip * 0.08; cb = 0.28 + chip * 0.07; }
+      if (mortar) { cr = 0.15 + chip * 0.06; cg = 0.14 + chip * 0.06; cb = 0.13 + chip * 0.05; }
       // manchas de humedad/hollín verticales
       const streak = fbm2(x / size * 30, y / size * 3, 3, 30, seed + 21);
       const dark = Math.max(0, streak - 0.55) * 0.8;

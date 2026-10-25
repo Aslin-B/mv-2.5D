@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { StaticBatch, Kit, buildWheel } from '../render/architecture.js';
+import { StaticBatch, Kit, buildWheel, mergeByMaterial } from '../render/architecture.js';
 import { triplanarMaterial, bronzeMaterial } from '../render/materials.js';
 import { stoneAshlar, stoneFlags, woodPlanks, ivyCard, shaftTexture, waterNormals, rockFace, bannerTexture, grassCard } from '../render/textures.js';
 import { buildWater, buildWaterfall } from '../render/water.js';
@@ -824,16 +824,19 @@ function fgChain(scene, mats, x, top, len, z) {
   const mat = mats.iron.clone();
   mat.transparent = true;
   const g = new THREE.Group();
+  // eslabones y gancho en una sola malla: una llamada de dibujo en vez de una por eslabón
   const n = Math.floor(len / 0.11);
+  const geos = [];
   for (let i = 0; i < n; i++) {
-    const l = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.018, 5, 10), mat);
-    l.position.set(x, top - i * 0.11, z);
-    if (i % 2) l.rotation.y = Math.PI / 2;
-    g.add(l);
+    const l = new THREE.TorusGeometry(0.06, 0.018, 5, 10);
+    if (i % 2) l.rotateY(Math.PI / 2);
+    l.translate(x, top - i * 0.11, z);
+    geos.push(l);
   }
-  const hook = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.03, 6, 12, Math.PI * 1.4), mat);
-  hook.position.set(x, top - len - 0.12, z);
-  g.add(hook);
+  const hook = new THREE.TorusGeometry(0.16, 0.03, 6, 12, Math.PI * 1.4);
+  hook.translate(x, top - len - 0.12, z);
+  geos.push(hook);
+  g.add(new THREE.Mesh(mergeGeometries(geos, false), mat));
   scene.add(g);
   return { group: g, mats: [mat], x0: x - 0.2, x1: x + 0.2, y0: top - len - 0.3, y1: top, z };
 }
@@ -904,6 +907,7 @@ function etherLamp(scene, mats, tex, x, y, z, { color = 'cyan', size = 1 } = {})
   const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex.dot, color: new THREE.Color(c[0] * 0.28, c[1] * 0.28, c[2] * 0.28), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
   halo.scale.setScalar(1.1 * size);
   g.add(halo);
+  mergeByMaterial(g);
   g.position.set(x, y, z);
   scene.add(g);
   return { group: g, crystal, halo };

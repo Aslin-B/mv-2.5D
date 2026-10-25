@@ -60,6 +60,10 @@ cada iteración, en [`docs/juez/`](docs/juez/). Desde la iteración 4 el juez (v
 estilo de cada sala con las medianas de un conjunto de capturas de referencia del género
 (solo cifras derivadas; las imágenes no se guardan en el repositorio).
 
+Estado tras la iteración 6: **6,9 / 10** (10 = acabado de la referencia). Seis de siete métricas de
+estilo en objetivo; la que falta es el detalle por sala. Ver
+[`docs/juez/iteracion-6.md`](docs/juez/iteracion-6.md).
+
 ## Estructura
 
 ```

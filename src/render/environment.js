@@ -48,6 +48,7 @@ export function buildSky() {
   const sky = new THREE.Mesh(new THREE.SphereGeometry(900, 48, 24), mat);
   sky.frustumCulled = false;
   sky.renderOrder = -10;
+  sky.userData.noAO = true;
   return sky;
 }
 
@@ -55,10 +56,12 @@ export function buildSky() {
 export function buildMountains() {
   const group = new THREE.Group();
   const layers = [
-    { z: -420, base: -30, amp: 120, freq: 0.004, color: '#b7aab2', top: '#ecc6ae', seed: 1 },
-    { z: -260, base: -30, amp: 70, freq: 0.008, color: '#9d93a0', top: '#dbb19c', seed: 2 },
-    { z: -150, base: -30, amp: 42, freq: 0.014, color: '#7f7886', top: '#c09584', seed: 3 },
-    { z: -90, base: -25, amp: 22, freq: 0.03, color: '#635f69', top: '#9a7a6c', seed: 4 },
+    // Siluetas oscuras a contraluz con perspectiva aérea: cada capa más cercana es más oscura y
+    // recibe menos neblina. (Antes el AO las oscurecía por accidente y solo en calidad alta.)
+    { z: -420, base: -30, amp: 120, freq: 0.004, color: '#6c5a62', top: '#b98b76', seed: 1, hz: 0.5 },
+    { z: -260, base: -30, amp: 70, freq: 0.008, color: '#4a404b', top: '#8f6a59', seed: 2, hz: 0.36 },
+    { z: -150, base: -30, amp: 42, freq: 0.014, color: '#2f2933', top: '#6a4f42', seed: 3, hz: 0.22 },
+    { z: -90, base: -25, amp: 22, freq: 0.03, color: '#1c1820', top: '#46352d', seed: 4, hz: 0.1 },
   ];
   // Cada capa es una banda con varias filas: la arista recibe luz rasante del sol (contraluz),
   // las laderas orientadas al sol se aclaran, las cárcavas verticales rompen la superficie y la
@@ -80,17 +83,20 @@ export function buildMountains() {
       const x = x0 + ((x1 - x0) * i) / n;
       const dx = (x1 - x0) / n;
       const yTop = heightAt(x);
-      const slope = (heightAt(x + dx) - heightAt(x - dx)) / (2 * dx);
+      // pendiente medida en una ventana ancha: con la de un solo paso, el ruido fino alternaba
+      // columnas iluminadas y en sombra y las laderas parecían una cortina de franjas verticales
+      const w = 7 * dx;
+      const slope = (heightAt(x + w) - heightAt(x - w)) / (2 * w);
       const toSun = Math.min(1, Math.max(0, -slope * 1.4 + 0.15));
       const gully = fbm2(x * L.freq * 38, L.seed * 5, 3, 1e6, L.seed + 11) - 0.5;
       for (let j = 0; j <= ROWS; j++) {
         const v = j / ROWS;
         const y = lerp(yTop, L.base, Math.pow(v, 1.25));
         const rim = j === 0 ? 1 : 0;
-        const lit = toSun * (1 - v) * 0.75 + rim * (0.35 + 0.5 * toSun);
+        const lit = toSun * Math.pow(1 - v, 2.2) * 0.75 + rim * (0.35 + 0.5 * toSun);
         c.copy(shade).lerp(ct, Math.min(1, lit));
-        c.multiplyScalar(1 + gully * 0.5 * Math.sin(Math.PI * Math.min(1, v * 1.6)));
-        c.lerp(haze, Math.pow(v, 0.9) * 0.85);
+        c.multiplyScalar(1 + gully * 0.28 * Math.sin(Math.PI * Math.min(1, v * 1.6)));
+        c.lerp(haze, Math.pow(v, 0.9) * L.hz);
         pos.push(x, y, L.z);
         col.push(c.r, c.g, c.b);
         if (i < n && j < ROWS) {
@@ -105,6 +111,7 @@ export function buildMountains() {
     g.setIndex(idx);
     const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide }));
     m.renderOrder = -5;
+    m.userData.noAO = true;
     group.add(m);
   }
   return group;

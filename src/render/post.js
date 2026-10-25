@@ -100,14 +100,16 @@ export class PostFX {
       ao.updateGtaoMaterial({ radius: 0.55, distanceExponent: 1.6, thickness: 1.2, scale: 1.0, samples: 12 });
       ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
       // El pase de normales de GTAO solo excluye puntos y líneas: los sprites, tarjetas aditivas,
-      // estelas y velos transparentes generaban recuadros oscuros. Se excluyen también.
+      // estelas y velos transparentes generaban recuadros oscuros. Se excluyen también, igual que las
+      // tarjetas con recorte alfa (el pase de normales no recorta: la hierba dejaba recuadros) y el
+      // cielo y las cordilleras (con su profundidad, el AO oscurecía el cielo visto entre arcos).
       ao._overrideVisibility = function () {
         const cache = this._visibilityCache;
         this.scene.traverse((o) => {
           if (!o.visible) return;
           const m = o.material;
           const skip = o.isPoints || o.isLine || o.isLine2 || o.isSprite || o.userData.noAO ||
-            (m && !Array.isArray(m) && (m.transparent || m.depthWrite === false || m.blending === THREE.AdditiveBlending));
+            (m && !Array.isArray(m) && (m.transparent || m.depthWrite === false || m.blending === THREE.AdditiveBlending || m.alphaTest > 0));
           if (skip) { o.visible = false; cache.push(o); }
         });
       };

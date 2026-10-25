@@ -7,10 +7,17 @@ import { mulberry32 } from '../core/rng.js';
 // Todo se acumula por material y se fusiona en pocas llamadas de dibujo.
 // Convención: z = 0 es el plano de juego; z negativo hacia el fondo.
 
+// Además se trocea en tramos de CHUNK metros a lo largo de x: así el recorte por frustum descarta
+// las salas que no están en pantalla (y en el pase de sombras) en lugar de dibujar el nivel entero.
+const CHUNK = 32;
+
 export class StaticBatch {
   constructor() { this.groups = new Map(); }
   push(material, geo, { cast = true, receive = true } = {}) {
-    const key = material.uuid + (cast ? 'c' : 'n');
+    geo.computeBoundingBox();
+    const bb = geo.boundingBox;
+    const chunk = Math.floor((bb.min.x + bb.max.x) / 2 / CHUNK);
+    const key = material.uuid + (cast ? 'c' : 'n') + chunk;
     if (!this.groups.has(key)) this.groups.set(key, { material, geos: [], cast, receive });
     // Normalizar atributos para poder fusionar
     if (geo.index) geo = geo.toNonIndexed();
@@ -166,6 +173,31 @@ export class Kit {
 
 // Rueda hidráulica de madera y bronce (devuelve un grupo para animar su giro).
 // Usa material con UV (no triplanar) para que la textura gire con la pieza.
+// Fusiona los hijos directos de un grupo que comparten material: piezas que se mueven juntas
+// (la reja de la compuerta, la jaula de un farol) no necesitan una llamada de dibujo cada una.
+export function mergeByMaterial(group) {
+  const by = new Map();
+  for (const c of group.children) {
+    if (!c.isMesh) continue;
+    if (!by.has(c.material)) by.set(c.material, []);
+    by.get(c.material).push(c);
+  }
+  for (const [mat, list] of by) {
+    if (list.length < 2) continue;
+    const geos = list.map((m) => {
+      m.updateMatrix();
+      const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+      for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);
+      return g.applyMatrix4(m.matrix);
+    });
+    const mesh = new THREE.Mesh(mergeGeometries(geos, false), mat);
+    mesh.castShadow = list.some((m) => m.castShadow);
+    mesh.receiveShadow = list.some((m) => m.receiveShadow);
+    for (const m of list) group.remove(m);
+    group.add(mesh);
+  }
+}
+
 export function buildWheel(radius, width, mats, spokes = 10) {
   const group = new THREE.Group();
   const parts = [];
