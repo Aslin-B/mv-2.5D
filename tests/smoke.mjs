@@ -1,0 +1,10 @@
+import { openGame } from './harness.mjs';
+const g = await openGame({ query: 'test=1&q=' + (process.argv[2] || 'medio') });
+console.log('carga', g.loadMs, 'ms');
+console.log(JSON.stringify(await g.eval(() => window.__game.info())));
+await g.shot('tests/output/smoke_spawn.png');
+await g.run({ right: true }, 90);
+console.log(JSON.stringify(await g.state()));
+await g.shot('tests/output/smoke_run.png');
+console.log(g.logs.slice(0, 30).join('\n'));
+await g.close();
