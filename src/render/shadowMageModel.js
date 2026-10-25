@@ -92,6 +92,14 @@ export function buildShadowMage({ hiDetail = true } = {}) {
   const body = new SdfScene({ k: 0.016 });
   const mats = { pelvis: 'coat', torso: 'coat', neck: 'neck', arm: 'sleeve', forearm: 'sleeve', thigh: 'trousers', shin: 'trousers', boot: 'boot' };
   standardBody(body, P, B, mats);
+  // el cuello del cuerpo termina bajo la mandíbula: antes asomaba por la mejilla hundida de la
+  // cabeza como una gota de piel clara entre la barba
+  body.prims = body.prims.map((p) => {
+    if (p.mat !== 'neck' || !p.b) return p;
+    const { a, b, r1, r2, min, max, d, t, ...extra } = p;
+    void min; void max; void d; void t;
+    return roundCone(a, [b[0], b[1] - 0.045, b[2] - 0.006], r1, r2 * 0.86, extra);
+  });
   // botas altas de cuero: se sustituye el pie genérico por uno esbelto (talón, empeine, puntera
   // afilada), con suela y tacón; la caña sube hasta bajo la rodilla
   body.prims = body.prims.filter((p) => !(p.bone && (p.bone.startsWith('foot') || p.bone.startsWith('toe'))));
