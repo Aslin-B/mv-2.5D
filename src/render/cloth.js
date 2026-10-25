@@ -6,6 +6,7 @@ import * as THREE from 'three';
 
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _p = new THREE.Vector3();
 const _q = new THREE.Quaternion();
+const _o = new THREE.Vector3(), _vb = new THREE.Vector3();
 // canal verde lineal del color base (normaliza la variación del forro)
 const b2s = (hex) => new THREE.Color(hex).g.toFixed(4);
 
@@ -155,7 +156,7 @@ function coatTextures({ base = '#29262c', line = '#b3b0b8' } = {}) {
 }
 
 export class Cape {
-  constructor(model, scene, { cols = 5, rows = 10, length = 0.74, palette = null, anchors = null, bone = 'chest', drag = 0.965, liningFlip = false, outward = 0.02, flare = 0.13, gather = 1, open = 0 } = {}) {
+  constructor(model, scene, { cols = 5, rows = 10, length = 0.74, palette = null, anchors = null, bone = 'chest', drag = 0.965, air = 0.011, maxSwing = 72, liningFlip = false, outward = 0.02, flare = 0.13, gather = 1, open = 0 } = {}) {
     // flare: ensanche del bajo respecto al talle (vuelo de la falda del abrigo); gather: tela de más
     // entre anclajes, que se recoge en pliegues verticales; open: separación hacia fuera del canto
     // delantero en el bajo (faldones abiertos en V invertida)
@@ -165,6 +166,12 @@ export class Cape {
     this.model = model;
     this.bone = bone;
     this.drag = drag;
+    // `drag` amortigua el movimiento de la tela respecto al cuerpo; `air`, el arrastre del aire
+    // respecto al mundo. Antes todo el amortiguamiento era respecto al mundo y, al correr, el
+    // faldón quedaba casi horizontal, como una bandera tiesa.
+    this.air = air;
+    this.minDrop = Math.cos(maxSwing * Math.PI / 180); // el bajo no sube más allá de este ángulo
+    this.lastO = null;
     this.outward = outward;
     this.cols = cols; this.rows = rows; this.length = length;
     this.panels = [];
@@ -249,13 +256,19 @@ if (!clothOuter) metalnessFactor = 0.0;`);
     ];
   }
 
-  reset() { for (const p of this.panels) p.init = false; }
+  reset() { for (const p of this.panels) p.init = false; this.lastO = null; }
 
   step(dt, windX = 0) {
     this.clock = (this.clock || 0) + dt;
     this.updateColliders();
     const segV = this.length / (this.rows - 1);
     const g = -9.8 * dt * dt;
+    // velocidad del cuerpo en este paso (un salto grande es un teletransporte: no cuenta)
+    const o = this.model.bones[this.bone].getWorldPosition(_o);
+    if (!this.lastO) this.lastO = o.clone();
+    _vb.subVectors(o, this.lastO);
+    if (_vb.lengthSq() > 0.09) _vb.set(0, 0, 0);
+    this.lastO.copy(o);
     for (const P of this.panels) {
       const { pos, prev } = P;
       const C = this.cols, R = this.rows;
@@ -296,7 +309,7 @@ if (!clothOuter) metalnessFactor = 0.0;`);
       for (let r = 1; r < R; r++) for (let c = 0; c < C; c++) {
         const i = r * C + c;
         const p = pos[i];
-        _a.subVectors(p, prev[i]).multiplyScalar(this.drag);
+        _a.subVectors(p, prev[i]).sub(_vb).multiplyScalar(this.drag).add(_vb).addScaledVector(_vb, -this.air);
         prev[i].copy(p);
         p.add(_a);
         p.y += g;
@@ -339,6 +352,17 @@ if (!clothOuter) metalnessFactor = 0.0;`);
         }
         // Colisión con cápsulas
         for (let i = C; i < pos.length; i++) this.collide(pos[i]);
+      }
+      // La lana no se estira: cada fila queda como mucho a un 6 % más de su largo de la de arriba
+      // (con fuerzas fuertes, el giro o la carrera, las iteraciones no bastaban y el faldón se alargaba)
+      for (let r = 1; r < R; r++) for (let c = 0; c < C; c++) {
+        const a = pos[(r - 1) * C + c], b = pos[r * C + c];
+        _p.subVectors(b, a);
+        const d = _p.length(), mx = segV * 1.06;
+        if (d > mx) b.copy(a).addScaledVector(_p, mx / d);
+        // cono de vuelo: en un giro brusco el faldón no se levanta en horizontal como una tabla
+        const top = pos[c].y - r * segV * this.minDrop;
+        if (b.y > top) b.y = top;
       }
       // Volcar a la geometría
       const arr = P.geo.attributes.position.array;

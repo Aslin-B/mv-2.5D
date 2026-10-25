@@ -82,6 +82,12 @@ export const POSE = {
     hip: [0, -0.16, -0.04], hips: [-6, 0, 0], spine: [-8, 0, 0], chest: [-6, 0, 0], neck: [6, 0, 0], head: [4, 0, 0],
     armL: [-35, 0, 25], foreL: [-40, 0, 0],
   }),
+  // amortiguación al aterrizar (aditiva, escalada por lo que se hunde la cadera): tronco adelante,
+  // mirada arriba y el brazo libre fuera para equilibrar
+  land: makePose({
+    hips: [8, 0, 0], spine: [16, 0, 0], chest: [8, 0, 0], neck: [-12, 0, 0], head: [-8, 0, 0],
+    clavL: [0, 0, -5], armL: [-22, 0, 26], foreL: [-30, 0, 0], handL: [12, 0, 0],
+  }),
   jumpRise: makePose({
     hip: [0, 0, 0], spine: [6, 0, 0], chest: [2, 0, 0], neck: [-6, 0, 0], head: [-8, 0, 0],
     thighL: [-78, 0, 4], shinL: [95, 0, 0], footL: [20, 0, 0],

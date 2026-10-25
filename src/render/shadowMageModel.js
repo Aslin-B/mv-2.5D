@@ -654,7 +654,7 @@ export function buildShadowMage({ hiDetail = true } = {}) {
   };
   // Telas de los faldones (juego y estudio): hasta media caña, como en la lámina; los delanteros se
   // abren en V invertida desde el cinturón y dejan ver las piernas y el forro.
-  const coatBase = { cols: 9, rows: 16, flare: 0.45, gather: 1.5, palette: MAGE_COAT, bone: 'hips', drag: 0.95 };
+  const coatBase = { cols: 9, rows: 16, flare: 0.45, gather: 1.5, palette: MAGE_COAT, bone: 'hips', drag: 0.88, air: 0.014 };
   const coatCloth = {
     front: { ...coatBase, length: 0.8, anchors: coatAnchors.front, outward: -0.03, open: 0.3 },
     back: { ...coatBase, length: 0.84, anchors: coatAnchors.back, outward: 0.03, liningFlip: true },

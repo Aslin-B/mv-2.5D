@@ -125,10 +125,13 @@ export class Animator {
     this.prevVx = s.vx;
     springStep(this.leanSpring, clamp(accel * dir * 0.6, -14, 14), 2.2, 0.7, dt);
     if (s.landImpact) {
-      this.landSpring.v -= clamp(s.landImpact, 0, 22) * 0.055;
+      // el golpe hunde la cadera en proporción a la velocidad de caída (antes apenas 3 cm tras
+      // una caída de seis metros: el aterrizaje no pesaba)
+      this.landSpring.v -= clamp(s.landImpact, 0, 22) * 0.2;
       this.events.push({ type: 'land', impact: s.landImpact });
     }
-    springStep(this.landSpring, 0, 4.2, 0.55, dt);
+    // resorte más lento y amortiguado: la flexión se sostiene un instante en vez de rebotar
+    springStep(this.landSpring, 0, 2.6, 0.8, dt);
 
     const ground = s.mode === 'ground' || s.mode === 'attackGround' || s.mode === 'interact' || s.mode === 'parry';
     let carry = this.CARRY.idle;
@@ -145,6 +148,11 @@ export class Animator {
       addPose(pose, { chest: [br * 1.2, 0, 0], spine: [br * 0.5, 0, 0], clavL: [0, 0, br * 0.8], clavR: [0, 0, -br * 0.8] }, 1 - runW);
       pose.hip[1] += br * 0.004 * (1 - runW);
       addPose(pose, { spine: [this.leanSpring.x * 0.6, 0, 0], chest: [this.leanSpring.x * 0.4, 0, 0] });
+      const landW = clamp(-this.landSpring.x / 0.14, 0, 1);
+      if (landW > 0.01) {
+        addPose(pose, this.POSE.land, landW * (1 - runW * 0.5));
+        carry = this.blendCarry(carry, this.CARRY.fall, landW * 0.4);
+      }
     } else if (s.mode === 'air' || s.mode === 'attackAir') {
       const vy = s.vy;
       const running = smoothstep(1.5, 4.5, speed);
