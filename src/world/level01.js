@@ -2,13 +2,13 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { StaticBatch, Kit, buildWheel, mergeByMaterial } from '../render/architecture.js';
 import { triplanarMaterial, bronzeMaterial } from '../render/materials.js';
-import { stoneAshlar, stoneFlags, woodPlanks, ivyCard, shaftTexture, waterNormals, rockFace, bannerTexture, grassCard } from '../render/textures.js';
+import { stoneAshlar, stoneFlags, woodPlanks, ivyCard, shaftTexture, waterNormals, rockFace, bannerTexture, grassCard, foliageMass } from '../render/textures.js';
 import { buildWater, buildWaterfall } from '../render/water.js';
 import { SUN_DIR, Zones, buildMistBand } from '../render/environment.js';
 import { ClavijaPedestal, CaudalFragment, RestFountain, CrackedWall, SocketGate, Trigger, RuneBlock } from '../world/mechanisms.js';
 import { mulberry32, valueNoise3 } from '../core/rng.js';
 import { buildSections } from '../render/sections.js';
-import { pipeRun, valveWheel, etherTank, runeGauge, wallShelf, toolRack } from './machinery.js';
+import { pipeRun, valveWheel, etherTank, runeGauge, wallShelf, toolRack, gearGeometry, gearTrain, hoist, blueprint } from './machinery.js';
 
 // Primer nivel: el Acueducto del Alba (biblia §17), versión corta de cinco salas.
 // Coordenadas en metros: X a la derecha, Y arriba, Z hacia la cámara (z = 0 plano de juego).
@@ -48,8 +48,8 @@ export const LIGHT_ZONES = new Zones([
     shR: 0.78, shG: 0.94, shB: 1.16, hiR: 1.12, hiG: 0.98, hiB: 0.8, con: 0.26, bp: 0.008, sat: 1.1 },
   { x: 49, blend: 3, exposure: 0.8, sun: 4.2, hemi: 0.7, fogD: 0.0105, env: 0.6, fill: 3.0, bloom: 0.32, rim: 0.46, fogColor: '#97949e',
     shR: 0.8, shG: 0.95, shB: 1.16, hiR: 1.05, hiG: 1.0, hiB: 0.9, con: 0.3, bp: 0.015, sat: 1.08 },
-  { x: 87, blend: 3, exposure: 1.95, sun: 4.4, hemi: 0.42, fogD: 0.018, env: 0.4, fill: 4.4, bloom: 0.55, rim: 0.65, fogColor: '#3e342e',
-    shR: 0.86, shG: 0.9, shB: 1.12, hiR: 1.14, hiG: 0.95, hiB: 0.76, con: 0.28, bp: 0.008, sat: 1.1 },
+  { x: 87, blend: 3, exposure: 2.4, sun: 4.4, hemi: 0.42, fogD: 0.018, env: 0.4, fill: 4.4, bloom: 0.55, rim: 0.65, fogColor: '#3e342e',
+    shR: 0.86, shG: 0.9, shB: 1.12, hiR: 1.14, hiG: 0.95, hiB: 0.76, con: 0.34, bp: 0.008, sat: 1.1 },
   { x: 107, blend: 3, exposure: 0.76, sun: 4.4, hemi: 0.72, fogD: 0.008, env: 0.6, fill: 3.2, bloom: 0.34, rim: 0.46, fogColor: '#b0959a',
     shR: 0.84, shG: 0.88, shB: 1.16, hiR: 1.08, hiG: 0.98, hiB: 0.84, con: 0.3, bp: 0.015, sat: 1.08 },
 ]);
@@ -85,7 +85,7 @@ export function makeMaterials() {
     crack: new THREE.LineBasicMaterial({ color: '#16110d' }),
     ivy: new THREE.MeshStandardMaterial({ map: ivyCard(512, 5), alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.75 }),
     grass: new THREE.MeshStandardMaterial({ map: grassCard(256, 13), alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.85 }),
-    foliage: new THREE.MeshStandardMaterial({ color: '#33422a', roughness: 0.95 }),
+    foliage: triplanarMaterial({ set: foliageMass(512, 31), scale: 0.9, normalScale: 1.6, roughness: 1, grime: 0 }),
     burlap: new THREE.MeshStandardMaterial({ color: '#7a6347', roughness: 1, flatShading: false }),
     banner: new THREE.MeshStandardMaterial({ map: bannerTexture(256, 640), alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.9 }),
     ember: new THREE.MeshStandardMaterial({ color: '#1a0f09', emissive: '#ff5a1e', emissiveIntensity: 2.2, roughness: 0.9 }),
@@ -174,6 +174,9 @@ export function buildLevel01(game, tex) {
       const s = R(0.7, 1.4);
       cypress(batch, mats, R(-30, 170), -33 + R(-1, 5), R(-62, -24), s * 1.3, 9 * s * R(0.9, 1.3), i, 8, false);
     }
+    // bandadas lejanas que cruzan el valle (vida en el fondo, iteración 13)
+    birdFlock(scene, updaters, { x0: -40, x1: 190, y: 17, z: -48, n: 7, speed: 1.6, seed: 3 });
+    birdFlock(scene, updaters, { x0: -40, x1: 190, y: 26, z: -70, n: 5, speed: -1.1, seed: 9 });
     // neblina del valle en dos capas: delante del acueducto lejano y entre este y las cordilleras
     for (const b of [
       { x0: -120, x1: 260, y0: -22, y1: 3, z: -28, color: '#cdb4a6', alpha: 0.6, seed: 1 },
@@ -512,6 +515,15 @@ export function buildLevel01(game, tex) {
     banner(scene, mats, 93.7, 7.4, -2.5, 2.4, updaters);
     crate(kit, mats, 97.8, y, 98.6, 0.75, -1.9);
     barrel(batch, mats, 99.15, y, -1.6);
+    // iteración 13: tren de engranajes junto a la campana, planos clavados sobre la panoplia,
+    // polipasto con una caja de piezas y una rueda dentada en primer plano bajo el techo
+    gearTrain(scene, batch, mats, updaters, { x: 87.95, y: 6.75, z: -2.5, speed: 0.3, gears: [
+      { r: 0.5 }, { r: 0.2, dir: -0.85 }, { r: 0.3, dir: -2.0 },
+    ] });
+    blueprint(batch, mats, { x: 91.05, y: 6.42, z: -2.58, w: 1.0, h: 1.22, kind: 'acueducto', rot: 0.03 });
+    blueprint(batch, mats, { x: 92.0, y: 6.35, z: -2.555, w: 0.95, h: 1.15, kind: 'engranaje', rot: -0.05 });
+    hoist(batch, mats, { x: 97.6, top: 7.6, z: -0.45, loadY: 4.95, side: 1, tie: [97.2, 3.5, 0.6] });
+    foreground.push(fgGear(scene, mats, updaters, 90.6, 8.45, 2.6, 1.05));
   }
 
   // =====================================================================================
@@ -544,6 +556,15 @@ export function buildLevel01(game, tex) {
     etherLamp(scene, mats, tex, 124.4, 5.4, -0.68, { color: 'amber' });
     etherLamp(scene, mats, tex, 108.0, 3.4, -2.6, { color: 'teal', size: 1.3 });
     etherLamp(scene, mats, tex, 119.0, 3.4, -2.6, { color: 'teal', size: 1.3 });
+    // iteración 13: macetones de piedra con hiedra que cae por la balaustrada y un tambor de
+    // columna caído junto al banco
+    for (const ux of [109.2, 116.3, 122.6]) urn(batch, mats, rnd, ux, y + 1.06, -3.1);
+    const drum = new THREE.CylinderGeometry(0.42, 0.42, 0.75, 16);
+    drum.rotateZ(Math.PI / 2); drum.rotateY(0.35); drum.translate(114.6, y + 0.42, -2.6);
+    batch.push(mats.stone, drum);
+    const drumChip = new THREE.CylinderGeometry(0.42, 0.4, 0.3, 16, 1, false, 0, Math.PI * 1.3);
+    drumChip.translate(115.5, y + 0.15, -2.9);
+    batch.push(mats.stone, drumChip);
   }
 
   // Sombreado de sección: el frente cortado del terreno se funde hacia la oscuridad (lectura del plano).
@@ -839,6 +860,72 @@ function fgChain(scene, mats, x, top, len, z) {
   g.add(new THREE.Mesh(mergeGeometries(geos, false), mat));
   scene.add(g);
   return { group: g, mats: [mat], x0: x - 0.2, x1: x + 0.2, y0: top - len - 0.3, y1: top, z };
+}
+
+// Macetón de piedra torneado con una mata de follaje y guías de hiedra que cuelgan.
+function urn(batch, mats, rnd, x, y, z) {
+  const prof = [[0.0, 0], [0.16, 0], [0.12, 0.08], [0.1, 0.16], [0.24, 0.3], [0.27, 0.5], [0.3, 0.56], [0.25, 0.58]]
+    .map(([r, h]) => new THREE.Vector2(r, h));
+  const g = new THREE.LatheGeometry(prof, 16);
+  g.translate(x, y, z);
+  batch.push(mats.stone, g);
+  const bush = new THREE.IcosahedronGeometry(0.34, 2);
+  const p = bush.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const vx = p.getX(i), vy = p.getY(i), vz = p.getZ(i);
+    const k = 1 + (valueNoise3(vx * 6 + x, vy * 6, vz * 6, 5) - 0.5) * 0.6;
+    p.setXYZ(i, vx * k * 1.15, Math.max(-0.08, vy) * k * 0.8, vz * k);
+  }
+  bush.computeVertexNormals();
+  bush.translate(x, y + 0.64, z);
+  batch.push(mats.foliage, bush);
+  for (const s of [-1, 1]) hangIvy(batch, mats, x + s * (0.22 + rnd() * 0.08), y + 0.6, z + 0.3, 0.8 + rnd() * 0.5, 0.35);
+}
+
+// Bandada lejana: pájaros de dos alas que aletean y planean, cruzan el valle y reaparecen.
+function birdFlock(scene, updaters, { x0, x1, y, z, n, speed, seed }) {
+  const rnd = mulberry32(seed);
+  const mat = new THREE.MeshBasicMaterial({ color: '#2b2228', side: THREE.DoubleSide, fog: false });
+  const wing = new THREE.BufferGeometry();
+  wing.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0.5, 0.04, 0, 0.12, -0.1, 0, 0, 0, 0, -0.5, 0.04, 0, -0.12, -0.1, 0], 3));
+  const birds = [];
+  for (let i = 0; i < n; i++) {
+    const m = new THREE.Mesh(wing, mat);
+    const s = 0.8 + rnd() * 0.5;
+    m.scale.set(s * (speed > 0 ? 1 : -1), s, s);
+    m.renderOrder = -3;
+    m.userData.noAO = true;
+    scene.add(m);
+    birds.push({ m, ox: rnd() * 9 - i * 1.4, oy: (rnd() - 0.5) * 3 + Math.abs(i - n / 2) * 0.5, ph: rnd() * 6.28, s });
+  }
+  const span = x1 - x0;
+  updaters.push((dt, t) => {
+    const head = x0 + (((t * speed) % span) + span) % span;
+    for (const b of birds) {
+      const x = x0 + (((head + b.ox - x0) % span) + span) % span;
+      // aleteo a ráfagas: planea un rato y vuelve a batir
+      const flap = Math.sin(t * 9 + b.ph) * (0.5 + 0.5 * Math.sin(t * 0.7 + b.ph));
+      b.m.position.set(x, y + b.oy + Math.sin(t * 0.8 + b.ph) * 0.4, z);
+      b.m.scale.y = b.s * (0.25 + 0.75 * flap);
+    }
+  });
+}
+
+// Rueda dentada de hierro en primer plano, colgada del techo y girando despacio (encuadre oscuro).
+function fgGear(scene, mats, updaters, x, y, z, r) {
+  const mat = mats.iron.clone();
+  mat.transparent = true;
+  const g = new THREE.Group();
+  const gear = new THREE.Mesh(gearGeometry(r, Math.round(r * 28), { th: 0.12, tooth: 0.09, spokes: 6 }), mat);
+  gear.position.set(x, y, z);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.32, 12).rotateX(Math.PI / 2), mat);
+  hub.position.set(x, y, z);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.6, 0.1), mat);
+  arm.position.set(x, y + 0.8, z - 0.14);
+  g.add(gear, hub, arm);
+  scene.add(g);
+  updaters.push((dt, t) => { gear.rotation.z = t * 0.12; });
+  return { group: g, mats: [mat], x0: x - r, x1: x + r, y0: y - r, y1: y + r, z };
 }
 
 function sectionShade(scene, tex, x0, x1, top) {

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { fbm2, valueNoise2, voronoi2, hash2 } from '../core/rng.js';
+import { smoothstep } from '../core/math.js';
 
 // Texturas procedurales repetibles generadas al arrancar (sin descargas): color, normal (Sobel
 // sobre altura) y rugosidad. Las normales Sobel dan relieve aparente, no cambian la silueta (§10.4).
@@ -361,4 +362,35 @@ export function grassCard(size = 256, seed = 13) {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
+}
+
+// Masa de follaje (cipreses, matas): racimos de hojas en cúpula con huecos oscuros entre ellos y
+// hojas finas encima; el relieve sale al mapa de normales para que la luz rasante los modele.
+export function foliageMass(size = 512, seed = 31) {
+  const h = new Float32Array(size * size);
+  const col = new Uint8ClampedArray(size * size * 4);
+  const rough = new Uint8ClampedArray(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = x / size, v = y / size;
+      const A = voronoi2(u * 12, v * 12, 12, seed, 0.9);
+      const B = voronoi2(u * 48, v * 48, 48, seed + 4, 0.95);
+      const dome = 1 - smoothstep(0.1, 0.75, A.f1);
+      const leaf = 1 - smoothstep(0.05, 0.6, B.f1);
+      const n = fbm2(u * 8, v * 8, 3, 8, seed + 7);
+      h[y * size + x] = dome * 0.7 + leaf * 0.25 + n * 0.15;
+      const lum = (0.35 + 0.75 * dome) * (0.75 + 0.35 * leaf) * (0.85 + (n - 0.5) * 0.4);
+      // cada racimo tira a amarillo o a azul según su id (variación natural del verde)
+      const w = A.id;
+      const r = (0.23 + 0.12 * w) * lum, g = (0.35 + 0.05 * w) * lum, b = (0.23 - 0.07 * w) * lum;
+      const i = (y * size + x) * 4;
+      col[i] = srgbToByte(r); col[i + 1] = srgbToByte(g); col[i + 2] = srgbToByte(b); col[i + 3] = 255;
+      rough[i] = rough[i + 1] = rough[i + 2] = srgbToByte(0.8 - leaf * 0.15); rough[i + 3] = 255;
+    }
+  }
+  return {
+    map: toTexture(col, size, true),
+    normalMap: toTexture(heightToNormal(h, size, 4.0), size, false),
+    roughnessMap: toTexture(rough, size, false),
+  };
 }

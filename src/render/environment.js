@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { fbm2 } from '../core/rng.js';
+import { fbm2, voronoi2 } from '../core/rng.js';
 import { smoothstep, lerp } from '../core/math.js';
 
 // Atmósfera de amanecer: cielo procedural, montañas en capas con perspectiva aérea, sol direccional
@@ -52,23 +52,75 @@ export function buildSky() {
   return sky;
 }
 
+// Roca de las cordilleras pintada por código (mosaico de 512 px): cárcavas que bajan ramificándose
+// con el filo derecho encendido por el sol, cornisas de estratos con la cara superior clara y
+// sombra debajo, y moteado. Valor medio ~0,8: el sombreador lo reescala para no oscurecer la capa.
+function cragTexture(size = 512, seed = 5) {
+  const H = size * 2; // el doble de alto: las facetas se alargan en vertical y el patrón cierra
+  const c = document.createElement('canvas'); c.width = size; c.height = H;
+  const g = c.getContext('2d');
+  let s = seed;
+  const rnd = () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
+  const img = g.createImageData(size, H), d = img.data;
+  // facetas de roca: celdas de Voronoi alargadas en vertical (caras de erosión); cada una mira al
+  // sol (derecha) o se aparta de él, con una grieta oscura en el borde y subfacetas más pequeñas
+  for (let y = 0; y < H; y++) for (let x = 0; x < size; x++) {
+    const A = voronoi2(x / (size / 8), y / (H / 8), 8, seed, 0.9);
+    const B = voronoi2(x / (size / 24), y / (H / 24), 24, seed + 5, 0.9);
+    const face = (A.id - 0.5) * 0.55 + (B.id - 0.5) * 0.22;
+    const crack = 1 - Math.min(1, (A.f2 - A.f1) * 9) * 0.5 - (1 - Math.min(1, (B.f2 - B.f1) * 7)) * 0.18;
+    const n = fbm2(x / 32, y / 32, 3, size / 32, seed + 3);
+    const v = (0.74 + face * 0.6 + (n - 0.5) * 0.25) * (0.5 + 0.5 * crack);
+    const i = (y * size + x) * 4;
+    d[i] = d[i + 1] = d[i + 2] = Math.max(0, Math.min(255, Math.round(255 * v))); d[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  // cada trazo se repite desplazado un mosaico para que el patrón cierre en los bordes
+  const wrap = (fn) => { for (const ox of [-size, 0, size]) for (const oy of [-H, 0, H]) { g.save(); g.translate(ox, oy); fn(); g.restore(); } };
+  const path = (pts) => { g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); for (const p of pts) g.lineTo(p[0], p[1]); g.stroke(); };
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  // cárcavas: canales que bajan con deriva, se bifurcan y se ensanchan; filo derecho al sol
+  const gully = (x, y, len, w) => {
+    const pts = [[x, y]];
+    let dx = (rnd() - 0.5) * 0.6;
+    for (let i = 0; i < len; i++) {
+      dx = dx * 0.8 + (rnd() - 0.5) * 0.5;
+      x += dx * 4; y += 4 + rnd() * 3;
+      pts.push([x, y]);
+      if (w > 2.5 && rnd() < 0.06) gully(x, y, len * 0.5, w * 0.6);
+    }
+    wrap(() => {
+      g.strokeStyle = 'rgba(255,240,225,0.45)'; g.lineWidth = w * 0.6; g.save(); g.translate(w * 0.8, -1); path(pts); g.restore();
+      g.strokeStyle = 'rgba(20,18,20,0.62)'; g.lineWidth = w; path(pts);
+    });
+  };
+  for (let k = 0; k < 24; k++) gully(rnd() * size, rnd() * H, 18 + rnd() * 30, 3 + rnd() * 4);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 4;
+  return tex;
+}
+
 // Cordilleras en capas: silueta por ruido fractal, color hacia la niebla con la distancia.
 export function buildMountains() {
   const group = new THREE.Group();
   const layers = [
     // Siluetas oscuras a contraluz con perspectiva aérea: cada capa más cercana es más oscura y
     // recibe menos neblina. (Antes el AO las oscurecía por accidente y solo en calidad alta.)
-    { z: -420, base: -30, amp: 120, freq: 0.004, color: '#6c5a62', top: '#b98b76', seed: 1, hz: 0.5 },
-    { z: -260, base: -30, amp: 70, freq: 0.008, color: '#4a404b', top: '#8f6a59', seed: 2, hz: 0.36 },
-    { z: -150, base: -30, amp: 42, freq: 0.014, color: '#2f2933', top: '#6a4f42', seed: 3, hz: 0.22 },
-    { z: -90, base: -25, amp: 22, freq: 0.03, color: '#1c1820', top: '#46352d', seed: 4, hz: 0.1 },
+    // dk: intensidad de la roca pintada (las capas lejanas la pierden en la bruma)
+    { z: -420, base: -30, amp: 120, freq: 0.004, color: '#6c5a62', top: '#b98b76', seed: 1, hz: 0.5, dk: 0.45 },
+    { z: -260, base: -30, amp: 70, freq: 0.008, color: '#4a404b', top: '#8f6a59', seed: 2, hz: 0.36, dk: 0.7 },
+    { z: -150, base: -30, amp: 42, freq: 0.014, color: '#2f2933', top: '#6a4f42', seed: 3, hz: 0.22, dk: 1.0 },
+    { z: -90, base: -25, amp: 22, freq: 0.03, color: '#1c1820', top: '#46352d', seed: 4, hz: 0.1, dk: 1.0 },
   ];
+  const crag = cragTexture();
   // Cada capa es una banda con varias filas: la arista recibe luz rasante del sol (contraluz),
   // las laderas orientadas al sol se aclaran, las cárcavas verticales rompen la superficie y la
   // base se funde con la neblina del valle (perspectiva aérea).
   const ROWS = 7;
   for (const L of layers) {
-    const pos = [], col = [], idx = [];
+    const pos = [], col = [], idx = [], uv = [], dk = [];
+    const S = Math.abs(L.z) * 0.32; // metros por mosaico: la roca mide lo mismo en pantalla en cada capa
     const x0 = -500, x1 = 700, n = 900;
     const ct = new THREE.Color(L.top), cb = new THREE.Color(L.color), haze = new THREE.Color('#b8a2a0');
     const shade = cb.clone().multiplyScalar(0.78).lerp(new THREE.Color('#5a5a78'), 0.18);
@@ -99,6 +151,8 @@ export function buildMountains() {
         c.lerp(haze, Math.pow(v, 0.9) * L.hz);
         pos.push(x, y, L.z);
         col.push(c.r, c.g, c.b);
+        uv.push(x / S + L.seed * 0.37, (yTop - y) / (2 * S));
+        dk.push(L.dk * (1 - Math.pow(v, 1.2)) * (0.55 + 0.45 * Math.min(1, lit + 0.2)));
         if (i < n && j < ROWS) {
           const a = i * (ROWS + 1) + j, b = a + ROWS + 1;
           idx.push(a, a + 1, b, a + 1, b + 1, b);
@@ -108,8 +162,18 @@ export function buildMountains() {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setAttribute('detailK', new THREE.Float32BufferAttribute(dk, 1));
     g.setIndex(idx);
-    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide }));
+    const mat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide, map: crag });
+    mat.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float detailK;\nvarying float vDetailK;')
+        .replace('#include <uv_vertex>', '#include <uv_vertex>\nvDetailK = detailK;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vDetailK;')
+        .replace('#include <map_fragment>', 'diffuseColor.rgb *= mix(vec3(1.0), texture2D(map, vMapUv).rgb * 1.28, vDetailK);');
+    };
+    mat.customProgramCacheKey = () => 'crag-v1';
+    const m = new THREE.Mesh(g, mat);
     m.renderOrder = -5;
     m.userData.noAO = true;
     group.add(m);
