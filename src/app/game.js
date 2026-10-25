@@ -6,9 +6,11 @@ import { segAABB, sweepHits, expand } from '../core/geom2d.js';
 import { PhysicsWorld, moveBody } from '../physics2d/world.js';
 import { Hero, TUNING } from '../actors/hero.js';
 import { Marauder } from '../actors/marauder.js';
-import { ATTACKS } from '../animation/poses.js';
+import { ATTACKS, SORCERER_CARRY } from '../animation/poses.js';
+import { Projectiles } from '../actors/projectiles.js';
+import { RestFountain, CaudalFragment, ClavijaPedestal } from '../world/mechanisms.js';
+import { buildSorcerer, SORCERER_CLOTH, GLOW_COLOR } from '../render/sorcererModel.js';
 import { Animator } from '../animation/animator.js';
-import { buildHero } from '../render/heroModel.js';
 import { buildMarauder, cloneMarauder } from '../render/marauderModel.js';
 import { Cape } from '../render/cloth.js';
 import { CHAR_EDGE } from '../render/charMaterial.js';
@@ -21,7 +23,7 @@ import { PostFX, QUALITY } from '../render/post.js';
 import { GameAudio } from '../audio/audio.js';
 import { HUD } from '../ui/hud.js';
 import { Screens } from '../ui/screens.js';
-import { buildLevel01, SPAWN, LIGHT_ZONES, CAMERA_ZONES, AREAS } from '../world/level01.js';
+import { buildLevel01, SPAWN, LIGHT_ZONES, CAMERA_ZONES, AREAS, MAP_ROOMS, MAP_BOUNDS } from '../world/level01.js';
 
 // Bucle de juego (biblia §20.3): simulación de paso fijo a 60 Hz desacoplada del dibujo, con
 // pausa de impacto y cámara lenta como escalas de tiempo explícitas. La física decide; el
@@ -129,15 +131,32 @@ export class Game {
     this.physics = new PhysicsWorld();
     this.level = buildLevel01(this, this.tex);
 
-    // Héroe
-    const model = buildHero();
+    // Héroe: hechicero con brazales gemelos, manto y faldones simulados
+    const model = buildSorcerer();
     this.heroModel = model;
     scene.add(model.root);
     this.hero = new Hero(this, SPAWN.x, SPAWN.y);
-    this.heroAnim = new Animator(model);
-    this.heroCape = new Cape(model, scene);
-    this.trail = new SwordTrail(scene);
+    this.heroAnim = new Animator(model, { carry: SORCERER_CARRY });
+    const mantle = new Cape(model, scene, { cols: 6, rows: 12, length: 1.02, palette: SORCERER_CLOTH });
+    const robe = new Cape(model, scene, { cols: 4, rows: 7, length: 0.52, palette: { ...SORCERER_CLOTH, line: '#d2a64e' }, anchors: model.robeAnchors, bone: 'hips', drag: 0.94 });
+    this.heroCape = {
+      parts: [mantle, robe], panels: [...mantle.panels, ...robe.panels],
+      step(dt, w) { mantle.step(dt, w); robe.step(dt, w * 0.5); },
+      reset() { mantle.reset(); robe.reset(); },
+    };
+    for (const F of Object.values(model.foci)) { F.flare.material.map = this.tex.dot; F.flare.material.needsUpdate = true; }
+    this.trail = new SwordTrail(scene, { color: new THREE.Color(0.35, 1.9, 2.4) });
+    this.projectiles = new Projectiles(this);
     this.hero.grounded = true;
+    // mira láser del apuntado libre
+    {
+      const g = new THREE.PlaneGeometry(1, 1);
+      g.translate(0.5, 0, 0);
+      this.laser = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: new THREE.Color(0.5, 2.2, 2.8), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+      this.laser.renderOrder = 9;
+      this.laser.visible = false;
+      scene.add(this.laser);
+    }
 
     // Enemigos
     const tpl = buildMarauder();
@@ -145,6 +164,11 @@ export class Game {
     this.enemies = this.level.enemySpawns.map((s, i) => new Marauder(this, i === 0 ? tpl : cloneMarauder(tpl), s));
     // contorno rojizo y apagado: amenaza legible sin parecer un efecto de interfaz
     for (const e of this.enemies) for (const m of e.model.materials) m.userData.edgeTint.value.setRGB(1.25, 0.62, 0.48);
+    // personajes por encima de las secciones negras del primer plano (ver sections.js)
+    const front = (o) => o.traverse((q) => { q.renderOrder = Math.max(q.renderOrder, 3); });
+    front(model.root);
+    for (const p of this.heroCape.panels) front(p.mesh);
+    for (const e of this.enemies) { front(e.model.root); for (const p of e.cape.panels) front(p.mesh); }
     this.stats.enemies = this.enemies.length;
 
     // Efectos
@@ -154,6 +178,7 @@ export class Game {
       motes: new Particles(420, this.tex.dot, { additive: true }),
       mist: new Particles(260, this.tex.dot, { additive: false }),
       embers: new Particles(160, this.tex.dot, { additive: true }),
+      arcane: new Particles(1200, this.tex.dot, { additive: true, fogged: false }),
     };
     for (const k in this.fx) scene.add(this.fx[k].points);
     this.debris = new Debris(scene, this.level.mats.stone);
@@ -172,6 +197,19 @@ export class Game {
     this.post = new PostFX(renderer, scene, this.camera.cam, this.settings.quality);
     this.post.setSize(window.innerWidth, window.innerHeight);
 
+    // mapa local: sólidos, salas y puntos de interés
+    {
+      const M = this.level.mechanisms;
+      const marks = [];
+      for (const m of M) {
+        if (m instanceof RestFountain) marks.push({ x: m.x, y: m.y, color: '#7df0b0' });
+      }
+      const frag = M.find((m) => m instanceof CaudalFragment);
+      if (frag) marks.push({ x: frag.x, y: frag.y, color: '#ffd27a', hidden: () => frag.taken });
+      const ped = M.find((m) => m instanceof ClavijaPedestal);
+      if (ped) marks.push({ x: ped.x, y: ped.y, color: '#ffb35c', hidden: () => this.hero.hasClavija });
+      this.hud.initMap(this.physics.solids, MAP_ROOMS, marks, MAP_BOUNDS);
+    }
     this.bindEvents();
     window.addEventListener('resize', () => this.onResize());
     document.addEventListener('visibilitychange', () => { if (document.hidden && this.state === 'play') this.pause(); });
@@ -280,11 +318,34 @@ export class Game {
       this.puff(d.x, d.y, Math.round(4 + d.impact * 0.8), 0.4 + d.impact * 0.06);
       if (d.impact > 14) this.cameraShake(0.22);
     });
-    E.on('dodge', (d) => { A.play('roll'); this.puff(this.hero.x, this.hero.y, 8, 0.8); void d; });
+    E.on('dodge', (d) => {
+      A.play('dash', { pan: panX(d.x) });
+      this.puff(d.x, d.y, 6, 0.6);
+      this.dashFx = 0.24;
+    });
+    E.on('shoot', (d) => {
+      A.play(d.kind === 'bolt' ? 'shoot' : d.kind, { pan: panX(d.x) });
+      this.muzzleT = d.kind === 'bolt' ? 0.07 : 0.16;
+      this.muzzleKind = d.kind;
+      if (d.kind !== 'bolt') {
+        this.cameraShake(d.kind === 'counter' ? 0.35 : 0.2);
+        this.burst(this.fx.arcane, d.x, d.y, 26, d.kind === 'counter' ? [2.4, 1.7, 0.6] : [0.5, 1.9, 2.4], 3.2, 0.35);
+      }
+    });
+    E.on('chargeFull', () => { A.play('chargeFull'); });
+    E.on('counter', () => {
+      this.slow(0.35, 0.35);
+      this.flash = 0.3; this.post.final.uniforms.flashColor.value.set('#ffe6a8');
+    });
+    E.on('reflect', (d) => { A.play('parry', { pan: panX(d.x) }); this.hitstop = Math.max(this.hitstop, 0.06); this.burst(this.fx.arcane, d.x, d.y, 24, [2.4, 1.7, 0.6], 4, 0.4); });
+    E.on('boltImpact', (d) => {
+      A.play('impact', { heavy: d.heavy, pan: panX(d.x) });
+      if (d.heavy) this.cameraShake(0.16);
+    });
     E.on('slide', () => A.play('slide'));
     E.on('ledge', () => A.play('ledge'));
     E.on('mantle', () => A.play('ledge'));
-    E.on('attack', (d) => A.play('swing', { heavy: d.id === 'cut3' || d.id === 'riposte' }));
+    E.on('attack', (d) => A.play(d.id === 'strike' ? 'strike' : 'swing', { heavy: d.id === 'cut3' || d.id === 'riposte' }));
     E.on('heroHit', (d) => {
       A.play('heroHit');
       this.hitstop = Math.max(this.hitstop, 0.06);
@@ -311,7 +372,7 @@ export class Game {
       this.cameraShake(0.32);
       this.burst(this.fx.sparks, d.x, d.y, 34, [1.0, 0.78, 0.45], 6, 0.5);
       this.glint(new THREE.Vector3(d.x, d.y, 0.3), 0.3, 1.05);
-      this.hud.toast('¡Parada precisa! Contraataca ahora', 1.6);
+      this.hud.toast('¡Desvío! Lanza el contraconjuro (J)', 1.6);
     });
     E.on('wallHit', (d) => { A.play('stone'); this.burst(this.fx.dust, d.x, d.y, 12, [0.7, 0.64, 0.55], 2); this.cameraShake(0.12); });
     E.on('wallBreak', (d) => {
@@ -371,7 +432,8 @@ export class Game {
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
       const s = speed * (0.3 + Math.random());
-      sys.emit({ x, y, z: 0.2, vx: Math.cos(a) * s, vy: Math.sin(a) * s + 1, vz: (Math.random() - 0.5) * s, life: life * (0.5 + Math.random()), size: sys === this.fx.sparks ? 0.04 + Math.random() * 0.03 : 0.12, grow: sys === this.fx.sparks ? -0.05 : 0.3, drag: 0.05, gravity: sys === this.fx.sparks ? 9 : 0.5, color, alpha: 1 });
+      const spark = sys === this.fx.sparks || sys === this.fx.arcane;
+      sys.emit({ x, y, z: 0.2, vx: Math.cos(a) * s, vy: Math.sin(a) * s + 1, vz: (Math.random() - 0.5) * s, life: life * (0.5 + Math.random()), size: spark ? 0.04 + Math.random() * 0.03 : 0.12, grow: spark ? -0.05 : 0.3, drag: sys === this.fx.arcane ? 0.25 : 0.05, gravity: sys === this.fx.sparks ? 9 : sys === this.fx.arcane ? 1.2 : 0.5, color, alpha: 1 });
     }
   }
 
@@ -438,6 +500,8 @@ export class Game {
     const swinging = hero.attack && ATTACKS[hero.attack.id].damage > 0 && hero.attack.t > ATTACKS[hero.attack.id].active[0] - 0.05 && hero.attack.t < ATTACKS[hero.attack.id].active[1] + 0.06;
     this.trail.push(anim.bladeBase, anim.bladeTip, swinging);
     this.heroModel.clavija.group.visible = hero.hasClavija;
+    this.projectiles.update(DT);
+    this.arcaneFx(DT);
 
     // Enemigos (duermen lejos de la cámara)
     for (const e of this.enemies) {
@@ -521,6 +585,37 @@ export class Game {
     e.hp = 100; e.attack = null; e.vx = 0; e.alerted = false; e.mode = 'ground';
     e.setState('patrol');
     e.anim.reset(); e.cape.reset();
+  }
+
+  spawnBolt(spec) { return this.projectiles.fire(spec); }
+
+  onBoltHitEnemy(p, e, res) {
+    this.hero.stats.hits++;
+    if (res === 'dead') return;
+    if (res === 'stagger') { this.hitstop = Math.max(this.hitstop, 0.05); this.cameraShake(0.14); }
+    else if (res === 'armor') this.audio.play('armor');
+  }
+
+  // Partículas del poder: motas que convergen al foco durante la carga y estela del paso etéreo.
+  arcaneFx(dt) {
+    const hero = this.hero, anim = this.heroAnim;
+    const f = anim.bladeBase;
+    if (hero.charge > 0.02) {
+      const n = hero.charge >= 1 ? 3 : 2;
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2, r = 0.35 + Math.random() * 0.35;
+        const ox = Math.cos(a) * r, oy = Math.sin(a) * r;
+        this.fx.arcane.emit({ x: f.x + ox, y: f.y + oy, z: f.z, vx: -ox * 3.2, vy: -oy * 3.2, vz: 0, life: 0.28, size: 0.03 + hero.charge * 0.025, grow: -0.06, drag: 0, gravity: 0, color: [0.5, 1.9, 2.3], alpha: 0.9 });
+      }
+    }
+    if (this.dashFx > 0) {
+      this.dashFx -= dt;
+      // silueta de motas a lo largo del cuerpo: imagen residual del paso etéreo
+      for (let i = 0; i < 9; i++) {
+        const h = Math.random();
+        this.fx.arcane.emit({ x: hero.x + (Math.random() - 0.5) * 0.4, y: hero.y + h * 1.75, z: (Math.random() - 0.5) * 0.3, vx: -hero.vx * 0.06, vy: 0.1, life: 0.3 + Math.random() * 0.15, size: 0.05 + (1 - Math.abs(h - 0.55)) * 0.03, grow: -0.08, drag: 2, gravity: 0, color: [0.35, 1.5, 1.9], alpha: 0.7 });
+      }
+    }
   }
 
   resolveCombat(sweep) {
@@ -620,6 +715,8 @@ export class Game {
     this.scene.fog.color.lerp(z.fog, k);
     this.scene.environmentIntensity = lerp(this.scene.environmentIntensity ?? 1, z.env, k);
     this.zoneBloom = lerp(this.zoneBloom ?? z.bloom, z.bloom, k);
+    const G = this.grade || (this.grade = { ...z });
+    for (const q of ['shR', 'shG', 'shB', 'hiR', 'hiG', 'hiB', 'con', 'bp', 'sat']) G[q] = lerp(G[q], z[q], k);
     this.interior = clamp(1 - (z.hemi - 0.28) / 0.72, 0, 1);
     // contorno de personajes: tono solar en exteriores, cálido de antorcha en interiores
     const e = CHAR_EDGE.color.value;
@@ -693,30 +790,84 @@ export class Game {
       g.s.material.rotation = k * 1.2;
       g.s.material.opacity = 1 - k * 0.6;
     }
+    this.projectiles.render(dt, t);
+    this.updatePowerVisuals(dt, t);
     // primer plano: transparente si tapa a Aren (§8.7)
     this.fadeForeground(cam);
     // brillo de invulnerabilidad sin parpadeo
     const inv = hero.invuln > 0 && hero.mode !== 'dead' ? 0.15 + 0.1 * Math.sin(t * 20) : 0;
-    for (const m of this.heroModel.materials) m.userData.rimColor.value.setRGB(inv, inv * 0.8, inv * 0.6);
+    const dashRim = hero.mode === 'dash' ? 1.2 * (1 - hero.modeT / hero.modeDur) : 0;
+    for (const m of this.heroModel.materials) m.userData.rimColor.value.setRGB(inv + dashRim * 0.25, inv * 0.8 + dashRim * 1.1, inv * 0.6 + dashRim * 1.4);
 
     this.flash = Math.max(0, this.flash - dt * 2.2);
     this.fade = damp(this.fade, this.fadeTarget, 0.12, dt);
     this.letterbox = damp(this.letterbox, this.letterboxTarget, 0.25, dt);
-    this.post.render(dt, { letterbox: this.letterbox, flash: this.flash, fade: this.fade, bloom: this.zoneBloom, vignette: 0.34 });
+    this.post.render(dt, { letterbox: this.letterbox, flash: this.flash, fade: this.fade, bloom: this.zoneBloom, vignette: 0.34, grade: this.grade });
 
     // Interfaz
     if (this.state === 'play') {
       this.hud.updateHP(hero.hp, hero.maxHp);
+      this.hud.setCharge(hero.charge);
+      this.hud.updateMap(hero.x, hero.y, t);
       let p = null;
       if (!hero.locked) for (const m of this.level.mechanisms) { if (m.prompt) { p = m.prompt(hero); if (p) break; } }
       this.hud.prompt(p, cam, window.innerWidth, window.innerHeight);
-      this.audio.update(dt, { water: this.waterNear(), fall: this.fallNear(), interior: this.interior, combat: this.combatLevel() });
+      this.audio.update(dt, { water: this.waterNear(), fall: this.fallNear(), interior: this.interior, combat: this.combatLevel(), charge: hero.charge });
     } else this.hud.prompt(null);
     this.hud.update(dt);
     if (this.debugOn) {
       const info = this.renderer.info;
       this.hud.debug(`FPS ${this.fps.toFixed(0)}  calidad ${QUALITY[this.settings.quality].label}\nllamadas ${info.render.calls}  triángulos ${(info.render.triangles / 1000).toFixed(0)}k\nAren ${hero.x.toFixed(2)}, ${hero.y.toFixed(2)}  ${hero.mode}\nconstrucción ${this.buildMs.toFixed(0)} ms`);
     }
+  }
+
+  // Brazal activo: destello del foco (disparo y carga), hoja de éter del golpe, runas y mira láser.
+  updatePowerVisuals(dt, t) {
+    const hero = this.hero, anim = this.heroAnim, model = this.heroModel;
+    const active = anim.activeFocus;
+    this.muzzleT = Math.max(0, (this.muzzleT || 0) - dt);
+    for (const side in model.foci) {
+      const F = model.foci[side];
+      const on = F === active;
+      let s = 0, a = 0;
+      if (on && hero.charge > 0) { s = 0.18 + hero.charge * 0.32 + (hero.charge >= 1 ? 0.06 * Math.sin(t * 30) : 0); a = 0.55 + hero.charge * 0.45; }
+      if (on && this.muzzleT > 0) { const k = this.muzzleT / (this.muzzleKind === 'bolt' ? 0.07 : 0.16); s = Math.max(s, (this.muzzleKind === 'bolt' ? 0.45 : 0.95) * k); a = 1; }
+      F.flare.scale.setScalar(Math.max(0.001, s));
+      F.flare.material.opacity = a;
+      F.flare.material.color.copy(GLOW_COLOR).multiplyScalar(this.muzzleKind === 'counter' && this.muzzleT > 0 ? 1 : 0.8);
+      if (this.muzzleKind === 'counter' && this.muzzleT > 0) F.flare.material.color.setRGB(2.6, 1.9, 0.7);
+      // hoja de éter durante el golpe
+      let bw = 0;
+      if (on && hero.attack && hero.attack.id === 'strike') {
+        const at = hero.attack.t;
+        bw = Math.min(1, at / 0.04) * (1 - Math.max(0, (at - 0.2) / 0.12));
+      }
+      F.blade.visible = bw > 0.01;
+      F.blade.material.opacity = Math.max(0, bw) * 0.9;
+    }
+    // runas del equipo: laten al cargar
+    const rm = model.materials[1];
+    rm.userData.glow.value = 1 + hero.charge * 1.6 + (hero.charge >= 1 ? 0.5 * Math.sin(t * 24) : 0) + (this.muzzleT > 0 ? 0.8 : 0);
+    // mira láser en apuntado libre
+    const L = this.laser;
+    if (hero.aimLock && this.state === 'play') {
+      const m = hero.muzzle();
+      const dist = this.rayDistance(m.x, m.y, hero.aim.x, hero.aim.y, 16);
+      L.visible = true;
+      L.position.set(m.x, m.y, 0.3);
+      L.rotation.z = Math.atan2(hero.aim.y, hero.aim.x);
+      L.scale.set(dist, 0.018, 1);
+      L.material.opacity = 0.55 + 0.2 * Math.sin(t * 9);
+    } else L.visible = false;
+  }
+
+  rayDistance(x, y, dx, dy, max) {
+    const step = 0.08;
+    for (let d = 0.2; d < max; d += step) {
+      const px = x + dx * d, py = y + dy * d;
+      if (this.physics.segmentBlocked(px - dx * step, py - dy * step, px, py)) return d;
+    }
+    return max;
   }
 
   fadeForeground(cam) {
@@ -854,7 +1005,8 @@ export class Game {
           x: h.x, y: h.y, vx: h.vx, vy: h.vy, mode: h.mode, grounded: h.grounded, hp: h.hp, maxHp: h.maxHp, hasClavija: h.hasClavija,
           attack: h.attack && h.attack.id, enemies: g.enemies.map((e) => ({ x: e.x, y: e.y, hp: e.hp, state: e.state })),
           gate: g.level.mechanisms.find((m) => m.gate)?.state, wallBroken: g.level.mechanisms.find((m) => m.box && m.hurtbox)?.broken,
-          stats: { ...g.stats, parries: h.stats.parries, hits: h.stats.hits }, simTime: g.simTime, state: g.state,
+          stats: { ...g.stats, parries: h.stats.parries, hits: h.stats.hits, shots: h.shots }, simTime: g.simTime, state: g.state,
+          charge: h.charge, aim: { ...h.aim }, bolts: g.projectiles.list.length,
         };
       },
       info() { const i = g.renderer.info; return { calls: i.render.calls, triangles: i.render.triangles, buildMs: g.buildMs, heroTris: g.heroModel.triangles, heroTrisHi: g.heroModel.trianglesHi, heroBreakdown: g.heroModel.breakdown, marauderTris: g.marauderTris }; },

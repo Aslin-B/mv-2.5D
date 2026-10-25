@@ -5,10 +5,12 @@ import { clamp, approach, sign } from '../core/math.js';
 
 // Controlador de Aren: velocidad, colisiones, estados físicos y combate (biblia §12, §14, §20.2).
 // La física decide dónde está el personaje; el animador explica cómo llegó allí.
+// Hechicero (iteración 4): saetas de éter con carga, apuntado en 8 direcciones (libre con Shift),
+// golpe de éter que desvía estocadas y abre un contraconjuro, y paso etéreo con invulnerabilidad.
 
 export const TUNING = {
   w: 0.48, h: 1.72, hLow: 0.88,
-  run: 5.6, sprint: 7.6, accel: 34, brake: 44, airAccel: 18, airBrake: 10,
+  run: 6.4, sprint: 6.4, accel: 38, brake: 46, airAccel: 20, airBrake: 10,
   jumpV: 9.6, gravity: 24, fallMul: 1.38, maxFall: 17, jumpCut: 0.45,
   coyote: 0.1, jumpBuffer: 0.12,
   rollDur: 0.34, rollDist: 2.3, iframes: [0.03, 0.26],
@@ -18,6 +20,12 @@ export const TUNING = {
   attackBuffer: 0.2, dodgeCooldown: 0.18,
   hitDur: 0.4, invuln: 1.1,
   parryWindow: 0.16,
+  // poderes
+  dashDur: 0.2, dashSpeed: 12.5, dashIframes: 0.17, dashCooldown: 0.3,
+  shotCd: 0.14, chargeDelay: 0.24, chargeTime: 0.72,
+  bolt: { speed: 27, damage: 9, life: 0.75 },
+  charged: { speed: 24, damage: 40, life: 1.0 },
+  counter: { speed: 36, damage: 85, life: 1.0 },
 };
 
 export class Hero {
@@ -52,6 +60,14 @@ export class Hero {
     this.stats = { hits: 0, damageTaken: 0, parries: 0 };
     this.locked = false; // control retirado (cinemáticas)
     this.slideLowTime = 0;
+    // conjuros
+    this.aim = { x: 1, y: 0 };
+    this.aimLock = false;
+    this.aimHold = 0;       // tiempo que el brazo sigue apuntando tras un disparo
+    this.recoil = 0;
+    this.shotCd = 0;
+    this.charging = false; this.chargeT = 0; this.charge = 0; this.chargeFull = false;
+    this.shots = 0;
   }
 
   get x() { return this.body.x; }
@@ -71,6 +87,7 @@ export class Hero {
     if (this.invuln > 0) return true;
     if (this.mode === 'roll') return this.modeT >= TUNING.iframes[0] && this.modeT <= TUNING.iframes[1];
     if (this.mode === 'airdash') return this.modeT < 0.14;
+    if (this.mode === 'dash') return this.modeT < TUNING.dashIframes;
     if (this.mode === 'dead' || this.mode === 'interact') return true;
     return false;
   }
@@ -104,31 +121,30 @@ export class Hero {
     if (this.mode === 'hang') { this.updateHang(dt, input); return; }
     if (this.mode === 'mantle') { this.updateMantle(dt); return; }
 
-    // ---- Esquiva / voltereta / paso atrás / impulso aéreo ----
+    // ---- Paso etéreo: impulso horizontal corto con invulnerabilidad (suelo y una vez en el aire) ----
     if (ctl && input.pressed('dodge', 0.1) && this.dodgeCd <= 0 && ['ground', 'air'].includes(this.mode) && this.canCancelAttack()) {
-      input.consume('dodge');
-      this.attack = null;
-      if (this.grounded) {
-        if (ax !== 0 || Math.abs(this.vx) > 2) {
-          if (ax !== 0) this.facing = ax;
-          this.setMode('roll', T.rollDur);
-          this.vx = this.facing * (T.rollDist / T.rollDur);
-          this.game.events.emit('dodge', { kind: 'roll' });
-        } else {
-          this.setMode('backstep', T.backDur);
-          this.vx = -this.facing * (T.backDist / T.backDur);
-          this.vy = 2.2; this.grounded = false;
-          this.game.events.emit('dodge', { kind: 'back' });
-        }
-      } else if (!this.airDashUsed) {
+      if (this.grounded || !this.airDashUsed) {
+        input.consume('dodge');
+        this.attack = null;
         if (ax !== 0) this.facing = ax;
-        this.airDashUsed = true;
-        this.setMode('airdash', T.airDashDur);
-        this.vx = this.facing * T.airDashSpeed; this.vy = 0;
-        this.game.events.emit('dodge', { kind: 'air' });
+        if (!this.grounded) this.airDashUsed = true;
+        this.setMode('dash', T.dashDur);
+        this.vx = this.facing * T.dashSpeed; this.vy = 0;
+        this.game.events.emit('dodge', { kind: 'dash', x: this.body.x, y: this.body.y, dir: this.facing });
       }
     }
-
+    if (this.mode === 'dash') {
+      const t = this.modeT / this.modeDur;
+      this.vx = this.facing * T.dashSpeed * (1 - 0.25 * t);
+      this.vy = 0;
+      this.integrate(dt);
+      if (ctl) this.updateAim(input, ax);
+      if (this.modeT >= this.modeDur) {
+        this.setMode(this.grounded ? 'ground' : 'air');
+        this.vx *= 0.5; this.dodgeCd = T.dashCooldown;
+      }
+      return;
+    }
     if (this.mode === 'roll' || this.mode === 'backstep') {
       const t = this.modeT / this.modeDur;
       if (this.mode === 'roll') { b.h = T.hLow; this.vx = this.facing * (T.rollDist / T.rollDur) * (1 - 0.35 * t); }
@@ -138,12 +154,6 @@ export class Hero {
         if (this.mode === 'roll' && !this.tryStand()) { this.setMode('slide', 0.25); }
         else { this.setMode(this.grounded ? 'ground' : 'air'); this.dodgeCd = T.dodgeCooldown; }
       }
-      return;
-    }
-    if (this.mode === 'airdash') {
-      this.vy = 0;
-      this.integrate(dt);
-      if (this.modeT >= this.modeDur) { this.setMode('air'); this.vx *= 0.55; this.dodgeCd = T.dodgeCooldown; }
       return;
     }
 
@@ -163,6 +173,7 @@ export class Hero {
         else this.modeT = this.modeDur * 0.85; // seguir agachado hasta tener espacio
       }
       if (ctl && input.pressed('jump', T.jumpBuffer) && this.tryStand()) { input.consume('jump'); this.setMode('ground'); this.doJump(); }
+      if (ctl && this.mode === 'slide') this.updateShooting(dt, input, 0);
       return;
     }
     if (ctl && this.grounded && input.isDown('down') && Math.abs(this.vx) > 2.5 && input.pressed('down', 0.12) && !this.attack) {
@@ -174,12 +185,15 @@ export class Hero {
 
     // ---- Locomoción horizontal (§12.5) ----
     const attacking = this.attack && !(ATTACKS[this.attack.id] || {}).keepMomentum;
-    const target = ctl ? ax * (input.isDown('run') ? T.sprint : T.run) : 0;
+    // apuntado libre (Shift): plantado en el suelo, las direcciones giran el brazo
+    this.aimLock = ctl && this.grounded && input.isDown('aim') && !this.attack;
+    const target = ctl && !this.aimLock ? ax * T.run : 0;
+    if (this.aimLock && ax !== 0) this.facing = ax;
     this.skid = false;
     if (this.grounded) {
       if (attacking) {
         this.vx = approach(this.vx, 0, T.brake * 0.9 * dt);
-      } else if (ax !== 0) {
+      } else if (ax !== 0 && !this.aimLock) {
         const reversing = sign(this.vx) !== 0 && sign(this.vx) !== ax;
         if (reversing && Math.abs(this.vx) > 4.2) this.skid = true;
         this.vx = approach(this.vx, target, (reversing ? T.brake * 1.25 : T.accel) * dt);
@@ -364,59 +378,114 @@ export class Hero {
     if (this.attack) {
       const a = ATTACKS[this.attack.id];
       this.attack.t += dt;
-      // empuje de avance en cortes pesados (pasa por colisiones)
       if (a.lunge && this.attack.t > a.active[0] - 0.08 && this.attack.t < a.active[0] + 0.06 && this.grounded) {
         this.vx = this.facing * (this.attack.lunge ?? a.lunge) / 0.14;
       }
-      // tras una parada precisa la respuesta puede salir casi al instante (§14.5)
-      const comboFrom = this.attack.parried ? 0.05 : a.comboFrom;
-      if (input.pressed('attack', T.attackBuffer) && this.attack.t >= comboFrom - T.attackBuffer) {
-        if (this.attack.t >= comboFrom) { input.consume('attack'); this.startAttack(this.nextCombo()); return; }
+      // tras desviar una estocada el contraconjuro sale al instante (§14.5)
+      if (this.attack.parried && this.riposteWindow > 0 && input.pressed('attack', T.attackBuffer) && this.attack.t > 0.05) {
+        input.consume('attack');
+        this.attack = null;
+        this.fireCounter();
+        return;
       }
       if (this.attack.t >= a.duration) this.attack = null;
     }
-    if (!this.attack && input.pressed('attack', T.attackBuffer)) {
-      input.consume('attack');
-      let id = 'cut1';
-      if (this.riposteWindow > 0) id = 'riposte';
-      else if (!this.grounded) id = 'airCut';
-      else if (Math.abs(this.vx) > 4.0) id = 'runCut';
-      this.startAttack(id);
-    }
-    if (!this.attack && input.pressed('parry', 0.08) && this.grounded) {
+    // golpe de éter (L / clic derecho): cuerpo a cuerpo con ventana de desvío
+    if (!this.attack && input.pressed('parry', 0.08)) {
       input.consume('parry');
-      this.startAttack('parry');
+      this.charging = false; this.charge = 0;
+      this.startAttack('strike');
+      return;
+    }
+    if (this.attack) return;
+    this.updateShooting(dt, input, input.axisX());
+  }
+
+  // Dirección de tiro: 8 direcciones; sin Shift, arriba/diagonal en carrera y abajo solo en el aire.
+  updateAim(input, ax) {
+    const up = input.isDown('up'), down = input.isDown('down');
+    let x = this.facing, y = 0;
+    if (up) { y = 1; x = (this.aimLock ? ax : ax) !== 0 ? this.facing : 0; }
+    else if (down && (!this.grounded || this.aimLock) && this.mode !== 'slide') { y = -1; x = ax !== 0 ? this.facing : 0; }
+    if (this.aimLock && !up && !down) x = this.facing;
+    const l = Math.hypot(x, y) || 1;
+    this.aim.x = x / l; this.aim.y = y / l;
+  }
+
+  muzzle() {
+    const b = this.body;
+    const a = this.aim;
+    const sh = b.h * 0.8;
+    return { x: b.x + a.x * 0.58 + (Math.abs(a.y) > 0.9 ? this.facing * 0.14 : 0), y: b.y + sh + a.y * 0.56 };
+  }
+
+  updateShooting(dt, input, ax) {
+    const T = TUNING;
+    this.updateAim(input, ax);
+    if (this.shotCd > 0) this.shotCd -= dt;
+    if (this.aimHold > 0) this.aimHold -= dt;
+    this.recoil = Math.max(0, this.recoil - dt * 7);
+    if (this.riposteWindow > 0 && input.pressed('attack', T.attackBuffer)) {
+      input.consume('attack');
+      this.fireCounter();
+      return;
+    }
+    if (input.pressed('attack', T.attackBuffer) && this.shotCd <= 0) {
+      input.consume('attack');
+      this.fire('bolt');
+      this.charging = true; this.chargeT = 0; this.chargeFull = false;
+    }
+    if (this.charging) {
+      if (input.isDown('attack')) {
+        this.chargeT += dt;
+        this.charge = clamp((this.chargeT - T.chargeDelay) / T.chargeTime, 0, 1);
+        if (this.charge >= 1 && !this.chargeFull) { this.chargeFull = true; this.game.events.emit('chargeFull', {}); }
+      } else {
+        if (this.charge >= 1) this.fire('charged');
+        this.charging = false; this.charge = 0; this.chargeFull = false;
+      }
     }
   }
 
-  nextCombo() {
-    const id = this.attack.id;
-    if (this.riposteWindow > 0) return 'riposte';
-    if (!this.grounded) return 'airCut';
-    if (id === 'cut1' || id === 'runCut') return 'cut2';
-    if (id === 'cut2') return 'cut3';
-    return 'cut1';
+  fire(kind, target = null) {
+    const T = TUNING;
+    const spec = T[kind];
+    const m = this.muzzle();
+    let dx = this.aim.x, dy = this.aim.y;
+    if (target) {
+      const tx = target.x - m.x, ty = target.y - m.y, l = Math.hypot(tx, ty) || 1;
+      dx = tx / l; dy = ty / l;
+      this.aim.x = dx; this.aim.y = dy;
+      if (Math.abs(dx) > 0.2) this.facing = Math.sign(dx);
+    }
+    this.shotCd = T.shotCd;
+    this.aimHold = kind === 'bolt' ? 0.55 : 0.8;
+    this.recoil = kind === 'bolt' ? 0.6 : 1;
+    this.shots++;
+    this.game.spawnBolt({ x: m.x, y: m.y, dx, dy, kind, speed: spec.speed, damage: spec.damage, life: spec.life, owner: 'hero' });
+    this.game.events.emit('shoot', { kind, x: m.x, y: m.y, dx, dy });
   }
+
+  fireCounter() {
+    const tgt = this.riposteTarget;
+    this.riposteWindow = 0;
+    this.charging = false; this.charge = 0;
+    const c = tgt && tgt.alive ? { x: tgt.x, y: tgt.y + 1.2 } : null;
+    this.fire('counter', c);
+    this.game.events.emit('counter', { x: this.body.x, y: this.body.y + 1.4 });
+  }
+
+  nextCombo() { return 'strike'; }
 
   startAttack(id) {
     const ax = this.game.input.axisX();
-    if (ax !== 0 && id !== 'airCut') this.facing = ax;
+    if (ax !== 0) this.facing = ax;
     this.attack = { id, t: 0, hits: new Set() };
-    if (id === 'riposte') {
-      this.riposteWindow = 0;
-      // la respuesta tras una parada precisa avanza hasta el rival desviado (sin teletransporte)
-      const tgt = this.riposteTarget;
-      if (tgt && tgt.alive) {
-        const d = (tgt.x - this.body.x) * this.facing;
-        if (d > 0) this.attack.lunge = Math.max(0.4, Math.min(2.6, d - 0.95));
-      }
-    }
-    if (id === 'airCut' && this.vy < 1) this.vy = Math.max(this.vy, 1.2); // breve sostén, sin suspender indefinidamente
     this.game.events.emit('attack', { id });
   }
 
   parryActive() {
-    return this.attack && this.attack.id === 'parry' && this.attack.t <= TUNING.parryWindow;
+    return this.attack && (this.attack.id === 'strike' || this.attack.id === 'parry') && this.attack.t <= TUNING.parryWindow;
   }
 
   // Segmentos de la hoja (actual y anterior) para el barrido de impacto.
@@ -439,6 +508,7 @@ export class Hero {
     this.stats.damageTaken += dmg;
     this.invuln = TUNING.invuln;
     this.attack = null;
+    this.charging = false; this.charge = 0;
     const dir = Math.sign(this.body.x - fromX) || -this.facing;
     this.vx = dir * (opts.knock || 4.5);
     if (!opts.noLift) { this.vy = 3.2; this.grounded = false; }
@@ -461,7 +531,9 @@ export class Hero {
   // Estado para el animador.
   animState() {
     let mode = this.mode;
+    const aimW = (this.aimLock || this.charging && this.charge > 0 || this.aimHold > 0) && ['ground', 'air', 'slide', 'dash'].includes(this.mode) && !this.attack ? 1 : 0;
     return {
+      aim: this.aim, aimW, recoil: this.recoil, charge: this.charge, grounded: this.grounded,
       x: this.body.x, y: this.body.y, vx: this.vx, vy: this.vy, facing: this.facing,
       mode, modeT: this.modeT, modeDur: this.modeDur, groundY: this.body.y,
       attack: this.attack ? { id: this.attack.id, t: this.attack.t } : null,

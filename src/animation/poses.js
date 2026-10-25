@@ -245,6 +245,35 @@ export const ATTACKS = {
   },
 };
 
+// Golpe de éter (contraataque cuerpo a cuerpo del hechicero): la hoja luminosa nace del brazal,
+// barre de arriba-atrás a delante-abajo. Los primeros 0,16 s desvían una estocada (ver hero.js).
+ATTACKS.strike = {
+  duration: 0.38, active: [0.05, 0.17], damage: 30, comboFrom: 0.3, push: 2.4,
+  keys: [
+    { t: 0.0, hand: [-0.24, 1.38, 0.06], blade: [-0.12, 0.86, -0.5], body: { chest: [0, -12, 0], spine: [0, -4, 0] } },
+    { t: 0.05, hand: [-0.16, 1.48, 0.36], blade: [0.0, 0.78, 0.63], body: { spine: [4, -6, 0], chest: [0, -10, 0] } },
+    { t: 0.1, hand: [-0.02, 1.22, 0.6], blade: [0.06, -0.04, 1.0], body: { spine: [12, 8, 0], chest: [6, 12, 0], hip: [0, -0.04, 0.05] } },
+    { t: 0.17, hand: [0.08, 0.98, 0.48], blade: [0.2, -0.76, 0.62], body: { spine: [16, 12, 0], chest: [8, 18, 0], hip: [0, -0.06, 0.06] } },
+    { t: 0.38, hand: [-0.16, 1.06, 0.3], blade: [-0.05, -0.4, 0.9], body: { spine: [6, 4, 0] } },
+  ],
+};
+
+// Hechicero: el puño del brazal (foco) va por delante, listo para lanzar (lectura de «arma» en
+// movimiento). hand = centro del puño; blade = dirección del puño (de la muñeca a los nudillos).
+export const SORCERER_CARRY = {
+  idle: { hand: [-0.235, 1.0, 0.17], blade: [-0.12, -0.55, 0.83] },
+  run: { hand: [-0.2, 1.15, 0.3], blade: [0.0, -0.1, 0.99] },
+  jump: { hand: [-0.27, 1.3, 0.16], blade: [-0.05, 0.25, 0.97] },
+  fall: { hand: [-0.33, 1.3, 0.1], blade: [-0.3, 0.45, 0.84] },
+  slide: { hand: [-0.24, 0.62, 0.34], blade: [0.0, 0.06, 1.0] },
+  roll: { hand: [-0.22, 1.1, -0.14], blade: [-0.1, -0.35, -0.93] },
+  dash: { hand: [-0.22, 1.12, -0.16], blade: [-0.12, -0.3, -0.95] },
+  hang: { hand: [-0.16, 1.98, 0.18], blade: [-0.1, -0.95, 0.15] },
+  hit: { hand: [-0.33, 1.15, 0.05], blade: [-0.4, 0.5, -0.75] },
+  kneel: { hand: [-0.3, 0.75, 0.25], blade: [-0.05, -0.85, 0.5] },
+  dead: { hand: [-0.45, 0.25, 0.3], blade: [-0.6, -0.1, 0.8] },
+};
+
 // Gestos de interacción (mano izquierda por IK hacia un punto del mundo).
 export const INTERACT = {
   pickup: { duration: 1.5 },

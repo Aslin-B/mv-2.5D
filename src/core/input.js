@@ -7,7 +7,7 @@ const KEYMAP = {
   KeyW: 'up', ArrowUp: 'up',
   KeyS: 'down', ArrowDown: 'down',
   Space: 'jump',
-  ShiftLeft: 'run', ShiftRight: 'run',
+  ShiftLeft: 'aim', ShiftRight: 'aim',
   KeyJ: 'attack',
   KeyK: 'dodge',
   KeyL: 'parry',
@@ -19,7 +19,7 @@ const KEYMAP = {
   F3: 'debug',
 };
 
-export const ACTIONS = ['left', 'right', 'up', 'down', 'jump', 'run', 'attack', 'dodge', 'parry', 'interact', 'tool', 'pause', 'confirm', 'mute', 'debug'];
+export const ACTIONS = ['left', 'right', 'up', 'down', 'jump', 'run', 'aim', 'attack', 'dodge', 'parry', 'interact', 'tool', 'pause', 'confirm', 'mute', 'debug'];
 
 export class Input {
   constructor(target) {
@@ -93,7 +93,7 @@ export class Input {
       left: ax < -0.35 || b(14), right: ax > 0.35 || b(15),
       up: ay < -0.5 || b(12), down: ay > 0.5 || b(13),
       jump: b(0), dodge: b(1), attack: b(2), interact: b(3),
-      parry: b(4), tool: b(5), run: b(7) || b(6), pause: b(9), confirm: b(0) || b(9),
+      parry: b(4), tool: b(5), aim: b(7) || b(6), pause: b(9), confirm: b(0) || b(9),
     };
     for (const [a, on] of Object.entries(state)) {
       const was = !!this.padPrev[a];

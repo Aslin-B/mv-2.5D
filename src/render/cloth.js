@@ -50,8 +50,10 @@ function capeTexture({ base = '#365456', hem = '#3d2c1f', line = '#9a7a4e', ragg
 }
 
 export class Cape {
-  constructor(model, scene, { cols = 5, rows = 10, length = 0.74, palette = null } = {}) {
+  constructor(model, scene, { cols = 5, rows = 10, length = 0.74, palette = null, anchors = null, bone = 'chest', drag = 0.965 } = {}) {
     this.model = model;
+    this.bone = bone;
+    this.drag = drag;
     this.cols = cols; this.rows = rows; this.length = length;
     this.panels = [];
     const ragged = palette && palette.ragged;
@@ -77,7 +79,7 @@ export class Cape {
       scene.add(mesh);
       const pos = Array.from({ length: n }, () => new THREE.Vector3());
       const prev = Array.from({ length: n }, () => new THREE.Vector3());
-      this.panels.push({ side, geo, mesh, pos, prev, anchors: model.capeAnchors[side], init: false });
+      this.panels.push({ side, geo, mesh, pos, prev, anchors: (anchors || model.capeAnchors)[side], init: false });
     }
     this.colliders = [];
     this.wind = 0;
@@ -89,7 +91,7 @@ export class Cape {
     const t = (c / (this.cols - 1)) * (A.length - 1);
     const i = Math.min(Math.floor(t), A.length - 2);
     out.copy(A[i]).lerp(A[i + 1], t - i);
-    return this.model.bones.chest.localToWorld(out);
+    return this.model.bones[this.bone].localToWorld(out);
   }
 
   updateColliders() {
@@ -134,7 +136,7 @@ export class Cape {
       for (let r = 1; r < R; r++) for (let c = 0; c < C; c++) {
         const i = r * C + c;
         const p = pos[i];
-        _a.subVectors(p, prev[i]).multiplyScalar(0.965);
+        _a.subVectors(p, prev[i]).multiplyScalar(this.drag);
         prev[i].copy(p);
         p.add(_a);
         p.y += g;

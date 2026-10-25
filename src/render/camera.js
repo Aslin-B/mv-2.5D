@@ -18,7 +18,7 @@ export class GameCamera {
     this.t = 0;
     this.cine = null;      // { pos, look, fov, blend }
     this.cineW = 0;
-    this.height = 1.75;    // centro de la vista por encima de los pies
+    this.height = 2.7;     // centro de la vista por encima de los pies (suelo en el tercio inferior)
     this._look = new THREE.Vector3();
     this._pos = new THREE.Vector3();
   }

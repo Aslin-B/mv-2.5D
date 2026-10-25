@@ -30,11 +30,16 @@ const FinalShader = {
     aspect: { value: 16 / 9 },
     lift: { value: new THREE.Vector3(0.012, 0.01, 0.016) },
     sat: { value: 1.04 },
+    // gradación por sala: tinte de sombras y de luces (multiplicativo) y curva de contraste
+    shadowTint: { value: new THREE.Vector3(1, 1, 1) },
+    highTint: { value: new THREE.Vector3(1, 1, 1) },
+    contrast: { value: 0 },
+    blackPoint: { value: 0 },
   },
   vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
   fragmentShader: /* glsl */ `
-    uniform sampler2D tDiffuse; uniform float vignette, letterbox, flash, fade, grain, time, aspect, sat;
-    uniform vec3 flashColor, lift;
+    uniform sampler2D tDiffuse; uniform float vignette, letterbox, flash, fade, grain, time, aspect, sat, contrast, blackPoint;
+    uniform vec3 flashColor, lift, shadowTint, highTint;
     varying vec2 vUv;
     float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233)) + time * 61.0) * 43758.5453); }
     void main(){
@@ -42,6 +47,11 @@ const FinalShader = {
       // gradación suave: sombras ligeramente frías, saturación contenida
       float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
       c = mix(vec3(l), c, sat);
+      // tono dominante de la sala: sombras y luces teñidas por separado
+      c *= mix(shadowTint, highTint, smoothstep(0.04, 0.55, l));
+      // curva en S suave y punto negro: negros profundos sin aplastar los medios
+      c = max(c - blackPoint, 0.0) / (1.0 - blackPoint);
+      c = mix(c, c * c * (3.0 - 2.0 * c), contrast);
       c = c + lift * (1.0 - l);
       vec2 q = vUv - 0.5; q.x *= aspect * 0.75;
       float v = smoothstep(0.95, 0.25, length(q));
@@ -119,6 +129,14 @@ export class PostFX {
     u.fade.value = p.fade ?? 0;
     u.vignette.value = p.vignette ?? 0.32;
     if (this.bloom) this.bloom.strength = p.bloom ?? 0.55;
+    if (p.grade) {
+      const g = p.grade;
+      u.shadowTint.value.set(g.shR, g.shG, g.shB);
+      u.highTint.value.set(g.hiR, g.hiG, g.hiB);
+      u.contrast.value = g.con;
+      u.blackPoint.value = g.bp;
+      u.sat.value = g.sat;
+    }
     this.composer.render(dt);
   }
 }

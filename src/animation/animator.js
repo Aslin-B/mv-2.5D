@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { POSE, CARRY, ATTACKS, makePose, accumulate, overlay, addPose } from './poses.js';
+import { POSE, CARRY, ATTACKS, makePose, accumulate, overlay, addPose, mirrorDef } from './poses.js';
 import { solveTwoBone, setBoneWorldQuaternion } from './ik.js';
 import { clamp, lerp, smoothstep, damp, springStep, DEG, easeInOutSine } from '../core/math.js';
 import { EYELID_OPEN } from '../render/heroModel.js';
@@ -69,13 +69,24 @@ export class Animator {
     this.lookYaw = 0; this.lookPitch = 0;
     this.trailActive = false;
     this.rollAngle = 0;
-    // Ejes locales de la espada respecto a la mano derecha.
-    if (model.sword) {
-      const g = model.sword.group;
-      this.swordAxisL = new THREE.Vector3(0, 1, 0).applyQuaternion(g.quaternion);
-      this.swordEdgeL = new THREE.Vector3(1, 0, 0).applyQuaternion(g.quaternion);
-      this.gripL = g.position.clone();
+    // Ejes locales del arma (espada o foco arcano) respecto a la mano que la lleva. Con dos focos
+    // (brazales gemelos) lanza el brazo que queda del lado de la cámara y la pose se refleja.
+    this.focus = {};
+    const foci = model.foci || (model.sword ? { R: model.sword } : null);
+    if (foci) {
+      for (const side in foci) {
+        const g = foci[side].group;
+        this.focus[side] = {
+          f: foci[side],
+          axisL: new THREE.Vector3(0, 1, 0).applyQuaternion(g.quaternion),
+          edgeL: new THREE.Vector3(1, 0, 0).applyQuaternion(g.quaternion),
+          gripL: g.position.clone(),
+        };
+      }
     }
+    this.twin = !!model.foci;
+    this.castSide = 'R';
+    this.aimW = 0;
   }
 
   // ---- Utilidades de espacio ----
@@ -158,9 +169,14 @@ export class Animator {
       accumulate(pose, this.POSE.backstep, Math.sin(t * Math.PI));
       accumulate(pose, this.POSE.idle, 1 - Math.sin(t * Math.PI));
       carry = this.blendCarry(this.CARRY.idle, this.CARRY.fall, Math.sin(t * Math.PI) * 0.6);
-    } else if (s.mode === 'airdash') {
-      accumulate(pose, this.POSE.airdash, 1);
-      carry = this.CARRY.jump;
+    } else if (s.mode === 'airdash' || s.mode === 'dash') {
+      // paso etéreo: el cuerpo se proyecta hacia delante; en suelo, más bajo y con los pies juntos
+      const t = clamp(s.modeT / s.modeDur, 0, 1);
+      const env = smoothstep(0, 0.25, t) * (1 - smoothstep(0.75, 1, t));
+      accumulate(pose, this.POSE.airdash, env);
+      accumulate(pose, this.POSE.apex, 1 - env);
+      if (s.grounded) pose.hip[1] -= 0.12 * env;
+      carry = this.CARRY.dash || this.CARRY.jump;
     } else if (s.mode === 'hang' || s.mode === 'mantle') {
       accumulate(pose, this.POSE.hang, 1);
       carry = this.CARRY.hang;
@@ -210,6 +226,15 @@ export class Animator {
       if (ground) addPose(pose, { hip: [0, -0.04 * atkW, 0] });
     }
 
+    // Brazales gemelos: el brazo del lado de la cámara lanza; al mirar a la izquierda se refleja la pose.
+    if (this.twin) this.castSide = this.yaw >= 0 ? 'R' : 'L';
+    const mirrored = this.castSide === 'L';
+    if (mirrored) {
+      const mp = mirrorDef(pose);
+      for (const k in pose) delete pose[k];
+      Object.assign(pose, mp);
+    }
+
     // Mirada hacia el objetivo
     if (s.look) {
       this.root.worldToLocal(_v.copy(s.look));
@@ -256,8 +281,8 @@ export class Animator {
     }
     this.groundPrev = ground;
 
-    // 6) Brazo de la espada (IK + orientación de la hoja).
-    if (this.opts.hasSword && this.m.sword) {
+    // 6) Brazo del arma (IK + orientación de la hoja o del foco).
+    if (this.opts.hasSword && this.focus[this.castSide]) {
       const target = { hand: carry.hand.slice(), blade: carry.blade.slice() };
       // seguir el desplazamiento de la pelvis
       target.hand[0] += pose.hip[0]; target.hand[1] += pose.hip[1] + (ground ? this.landSpring.x : 0); target.hand[2] += pose.hip[2];
@@ -276,8 +301,24 @@ export class Animator {
         _v.fromArray(target.blade).applyAxisAngle(_v2.set(1, 0, 0), this.rollAngle);
         target.blade = _v.toArray();
       }
+      if (mirrored) { target.hand[0] = -target.hand[0]; target.blade[0] = -target.blade[0]; }
+      // Apuntado (conjuros): el puño sigue la dirección de tiro desde el hombro, con retroceso.
+      this.aimW = damp(this.aimW, s.aim && s.aimW ? s.aimW : 0, s.aimW > this.aimW ? 0.02 : 0.12, dt);
+      if (this.aimW > 0.001 && s.aim && !atk) {
+        const la = this.root.worldToLocal(_v.set(s.x + s.aim.x, s.y + s.aim.y, 0)).sub(this.root.worldToLocal(_v2.set(s.x, s.y, 0))).normalize();
+        // hombro en espacio del personaje (sigue la flexión del tronco)
+        const shw = this.root.worldToLocal(this.b['arm' + this.castSide].getWorldPosition(_v3));
+        const shoulder = [shw.x, shw.y, shw.z];
+        const reach = 0.5 - (s.recoil || 0) * 0.07;
+        const aimHand = [shoulder[0] + la.x * reach, shoulder[1] + la.y * reach - 0.02, shoulder[2] + la.z * reach + 0.04];
+        const w = this.aimW;
+        for (let i = 0; i < 3; i++) {
+          target.hand[i] = lerp(target.hand[i], aimHand[i], w);
+          target.blade[i] = lerp(target.blade[i], la.getComponent(i), w);
+        }
+      }
       const both = this.opts.alwaysTwoHands && s.mode !== 'dead' && s.mode !== 'hit' ? 1 : 0;
-      this.solveSwordArm(target, dt, Math.max(both, atk && atk.twoHands ? atkW : 0));
+      this.solveSwordArm(target, dt, Math.max(both, atk && atk.twoHands ? atkW : 0), this.twin && !atk ? 'palm' : 'sword');
     }
     if (s.mode === 'hang' || s.mode === 'mantle') this.solveHang(s);
     if (s.mode === 'interact' && s.interact && s.interact.point) this.solveReach(s);
@@ -433,7 +474,7 @@ export class Animator {
       for (const k of ['L', 'R']) {
         const f = feet[k];
         const lat = this.footLateral(f.side, _v2);
-        const rx = s.x + dir * restRel[k];
+        const rx = s.x + dir * restRel[this.castSide === 'L' ? (k === 'L' ? 'R' : 'L') : k];
         if (f.swing) {
           f.swing.t += dt;
           const t = clamp(f.swing.t / f.swing.dur, 0, 1);
@@ -501,8 +542,11 @@ export class Animator {
   }
 
   // ---- Espada -----------------------------------------------------------------
-  solveSwordArm(target, dt, twoHands) {
+  solveSwordArm(target, dt, twoHands, edgeMode = 'sword') {
     const b = this.b;
+    const side = this.castSide, other = side === 'R' ? 'L' : 'R';
+    const sgn = side === 'R' ? 1 : -1;
+    const F = this.focus[side];
     const gripW = this.toWorldPoint(_v.fromArray(target.hand), new THREE.Vector3());
     const bladeW = this.toWorldDir(_v.fromArray(target.blade).normalize(), new THREE.Vector3());
     // Filo orientado hacia el movimiento de la punta.
@@ -514,36 +558,46 @@ export class Animator {
     const edgeT = new THREE.Vector3(-bladeW.y, bladeW.x, 0);
     if (edgeT.lengthSq() < 1e-4) edgeT.copy(this.edge);
     edgeT.normalize();
-    if (mv.length() > 0.012) { if (edgeT.dot(mv) < 0) edgeT.negate(); }
-    else if (edgeT.dot(this.edge) < 0) edgeT.negate();
-    if (this.edge.dot(edgeT) < -0.3) this.edge.copy(edgeT); // espada de doble filo: invertir es simétrico
-    else this.edge.lerp(edgeT, clamp(dt * 22, 0, 1));
+    if (edgeMode === 'palm') {
+      // puño de conjuro: palma hacia abajo (hacia atrás al apuntar en vertical), sin volteos
+      edgeT.set(0, -1, 0).addScaledVector(this.toWorldDir(_v4.set(0, 0, -1), new THREE.Vector3()), 0.35);
+      edgeT.addScaledVector(bladeW, -edgeT.dot(bladeW));
+      if (edgeT.lengthSq() < 1e-4) edgeT.copy(this.edge);
+      edgeT.normalize();
+      this.edge.lerp(edgeT, clamp(dt * 18, 0, 1));
+    } else {
+      if (mv.length() > 0.012) { if (edgeT.dot(mv) < 0) edgeT.negate(); }
+      else if (edgeT.dot(this.edge) < 0) edgeT.negate();
+      if (this.edge.dot(edgeT) < -0.3) this.edge.copy(edgeT); // espada de doble filo: invertir es simétrico
+      else this.edge.lerp(edgeT, clamp(dt * 22, 0, 1));
+    }
     this.edge.addScaledVector(bladeW, -this.edge.dot(bladeW)).normalize();
     const E = this.edge;
-    const aL = this.swordAxisL, eL = this.swordEdgeL;
+    const aL = F.axisL, eL = F.edgeL;
     const cL = new THREE.Vector3().crossVectors(aL, eL);
     const cW = new THREE.Vector3().crossVectors(bladeW, E);
     _m1.makeBasis(aL, eL, cL);
     _m2.makeBasis(bladeW, E, cW);
     _m2.multiply(_m1.transpose());
     const handQ = new THREE.Quaternion().setFromRotationMatrix(_m2);
-    const wrist = gripW.clone().sub(this.gripL.clone().applyQuaternion(handQ));
-    b.armR.getWorldPosition(_v);
-    const pole = _v.clone().add(this.toWorldDir(new THREE.Vector3(-0.5, -0.5, -0.35), new THREE.Vector3()));
-    solveTwoBone(b.armR, b.foreR, b.handR, wrist, pole, 1);
-    setBoneWorldQuaternion(b.handR, handQ);
-    // Posiciones de la hoja para combate y estela.
-    const sw = this.m.sword;
+    const wrist = gripW.clone().sub(F.gripL.clone().applyQuaternion(handQ));
+    b['arm' + side].getWorldPosition(_v);
+    const pole = _v.clone().add(this.toWorldDir(new THREE.Vector3(-0.5 * sgn, -0.5, -0.35), new THREE.Vector3()));
+    solveTwoBone(b['arm' + side], b['fore' + side], b['hand' + side], wrist, pole, 1);
+    setBoneWorldQuaternion(b['hand' + side], handQ);
+    // Posiciones de la hoja (o del foco) para combate, proyectiles y estela.
+    const sw = F.f;
     sw.group.updateMatrixWorld(true);
     this.bladeBase.copy(sw.base).applyMatrix4(sw.group.matrixWorld);
     this.bladeTip.copy(sw.tip).applyMatrix4(sw.group.matrixWorld);
+    this.activeFocus = sw;
     if (twoHands > 0.05) {
       const lgrip = gripW.clone().addScaledVector(bladeW, -this.opts.twoHandOffset);
-      const lw = lgrip.clone().sub(this.gripL.clone().applyQuaternion(handQ));
-      b.armL.getWorldPosition(_v);
-      const poleL = _v.clone().add(this.toWorldDir(new THREE.Vector3(0.5, -0.5, -0.35), new THREE.Vector3()));
-      solveTwoBone(b.armL, b.foreL, b.handL, lw, poleL, twoHands);
-      setBoneWorldQuaternion(b.handL, handQ);
+      const lw = lgrip.clone().sub(F.gripL.clone().applyQuaternion(handQ));
+      b['arm' + other].getWorldPosition(_v);
+      const poleL = _v.clone().add(this.toWorldDir(new THREE.Vector3(0.5 * sgn, -0.5, -0.35), new THREE.Vector3()));
+      solveTwoBone(b['arm' + other], b['fore' + other], b['hand' + other], lw, poleL, twoHands);
+      setBoneWorldQuaternion(b['hand' + other], handQ);
     }
   }
 
@@ -554,11 +608,12 @@ export class Animator {
     const w = 1 - smoothstep(0.5, 0.85, t);
     if (w <= 0) return;
     const dir = s.facing >= 0 ? 1 : -1;
-    const lat = this.footLateral(1, new THREE.Vector3());
+    const o = this.castSide === 'R' ? 'L' : 'R';
+    const lat = this.footLateral(o === 'L' ? 1 : -1, new THREE.Vector3());
     const target = new THREE.Vector3(s.ledge.x + dir * 0.02, s.ledge.y + 0.02, 0).add(lat.clone().multiplyScalar(1.4));
-    b.armL.getWorldPosition(_v);
+    b['arm' + o].getWorldPosition(_v);
     const pole = _v.clone().add(new THREE.Vector3(-dir * 0.4, -0.6, 0));
-    solveTwoBone(b.armL, b.foreL, b.handL, target, pole, w);
+    solveTwoBone(b['arm' + o], b['fore' + o], b['hand' + o], target, pole, w);
   }
 
   solveReach(s) {
@@ -567,9 +622,10 @@ export class Animator {
     const w = smoothstep(0.15, 0.4, t) * (1 - smoothstep(0.6, 0.9, t));
     if (w <= 0) return;
     const p = s.interact.point;
-    b.armL.getWorldPosition(_v);
+    const o = this.castSide === 'R' ? 'L' : 'R';
+    b['arm' + o].getWorldPosition(_v);
     const pole = _v.clone().add(new THREE.Vector3(0, -0.6, -0.3));
-    solveTwoBone(b.armL, b.foreL, b.handL, new THREE.Vector3(p.x, p.y, p.z ?? 0.1), pole, w);
+    solveTwoBone(b['arm' + o], b['fore' + o], b['hand' + o], new THREE.Vector3(p.x, p.y, p.z ?? 0.1), pole, w);
   }
 
   updateBlink(dt) {

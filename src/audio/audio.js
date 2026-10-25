@@ -244,6 +244,46 @@ export class GameAudio {
         this.tone({ t: 2.6, f: 60, f2: 35, dur: 0.6, gain: 0.5, pan });
         break;
       }
+      // ---- poderes arcanos: timbres de cristal y aire ionizado (sin samples) ----
+      case 'shoot':
+        this.tone({ f: v(1250, 1350), f2: 420, dur: 0.11, type: 'triangle', gain: 0.1, pan });
+        this.tone({ f: v(2500, 2700), f2: 900, dur: 0.07, type: 'sine', gain: 0.05, pan });
+        this.noiseHit({ dur: 0.08, type: 'highpass', f: 2500, f2: 6000, gain: 0.08, pan, verb: false });
+        this.tone({ f: 120, f2: 70, dur: 0.06, gain: 0.12, pan });
+        break;
+      case 'chargeFull':
+        [81, 88].forEach((n, i) => this.tone({ t: i * 0.05, f: NOTE(n), dur: 0.5, type: 'triangle', gain: 0.05, pan }));
+        break;
+      case 'charged':
+        this.tone({ f: 520, f2: 140, dur: 0.38, type: 'sawtooth', gain: 0.09, pan });
+        this.tone({ f: 1040, f2: 300, dur: 0.3, type: 'triangle', gain: 0.1, pan });
+        this.noiseHit({ dur: 0.45, f: 900, f2: 3800, q: 0.9, gain: 0.2, pan, src: 'pink' });
+        this.tone({ f: 70, f2: 32, dur: 0.35, gain: 0.4, pan });
+        break;
+      case 'counter':
+        this.tone({ f: 330, f2: 90, dur: 0.6, type: 'sawtooth', gain: 0.12, pan });
+        [69, 76, 81].forEach((n, i) => this.tone({ t: i * 0.02, f: NOTE(n), dur: 1.1, type: 'triangle', gain: 0.07, pan }));
+        this.noiseHit({ dur: 0.6, f: 700, f2: 4200, q: 0.8, gain: 0.26, pan, src: 'pink' });
+        this.tone({ f: 60, f2: 28, dur: 0.5, gain: 0.5, pan });
+        break;
+      case 'impact': {
+        const k = o.heavy ? 1 : 0.45;
+        this.noiseHit({ dur: 0.09 + k * 0.12, type: 'bandpass', f: v(1800, 2400), f2: 600, q: 0.9, gain: 0.12 + k * 0.18, pan });
+        this.tone({ f: 160, f2: 60, dur: 0.1 + k * 0.1, gain: 0.12 + k * 0.25, pan });
+        break;
+      }
+      case 'dash':
+        this.noiseHit({ dur: 0.24, f: 2600, f2: 700, q: 0.7, gain: 0.14, pan, src: 'pink' });
+        this.tone({ f: 900, f2: 1800, dur: 0.12, type: 'sine', gain: 0.04, pan });
+        break;
+      case 'strike':
+        this.noiseHit({ dur: 0.16, f: 1400, f2: 3800, q: 1.3, gain: 0.14, pan });
+        this.tone({ f: 1500, f2: 700, dur: 0.14, type: 'triangle', gain: 0.05, pan });
+        break;
+      case 'orb':
+        this.tone({ f: v(300, 340), f2: 180, dur: 0.25, type: 'triangle', gain: 0.08, pan });
+        this.noiseHit({ dur: 0.18, f: 500, q: 5, gain: 0.05, pan });
+        break;
       case 'ui':
         this.tone({ f: 880, dur: 0.06, gain: 0.05, verb: false });
         break;
@@ -292,6 +332,18 @@ export class GameAudio {
     T(this.ambRoom.g.gain, 0.08 * st.interior);
     T(this.verbIn.gain, 0.06 + st.interior * 0.32, 0.8);
     this.ambWind.flt.frequency.setTargetAtTime(380 + Math.sin(now * 0.23) * 120, now, 0.5);
+    // zumbido de carga del brazal: sube de tono mientras se acumula el éter
+    if (!this.chargeHum) {
+      const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = 180;
+      const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = 362;
+      const g = this.out(0, 0, false);
+      o.connect(g); o2.connect(g); o.start(); o2.start();
+      this.chargeHum = { o, o2, g };
+    }
+    const ch = st.charge || 0;
+    T(this.chargeHum.g.gain, ch > 0.02 ? 0.025 + ch * 0.05 : 0, 0.05);
+    T(this.chargeHum.o.frequency, 180 + ch * 260 + (ch >= 1 ? Math.sin(now * 40) * 12 : 0), 0.05);
+    T(this.chargeHum.o2.frequency, 362 + ch * 530, 0.05);
     // capa de combate
     this.music.combat += (st.combat - this.music.combat) * Math.min(1, dt * 0.8);
     T(this.combatBus.gain, this.music.combat * 0.9, 0.6);

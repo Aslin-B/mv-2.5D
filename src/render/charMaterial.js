@@ -9,7 +9,7 @@ import * as THREE from 'three';
 // por zona). Imita la luz de recorte de escena para separar las siluetas del fondo (biblia §4.2).
 export const CHAR_EDGE = { color: { value: new THREE.Color(0, 0, 0) }, dir: { value: new THREE.Vector3(0.45, 0.9, 0).normalize() } };
 
-export const PATTERN = { skin: 0, quilt: 1, leather: 2, cloth: 3, hair: 4, metal: 5, plain: 6, wood: 7 };
+export const PATTERN = { skin: 0, quilt: 1, leather: 2, cloth: 3, hair: 4, metal: 5, plain: 6, wood: 7, glow: 8, enamel: 9 };
 
 const NOISE = /* glsl */ `
 float h3(vec3 p){ p = fract(p*0.3183099+vec3(0.71,0.113,0.419)); p*=17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
@@ -49,8 +49,12 @@ float cmHeight(vec3 p, float pat, float wear){
     h = fbm3(p*90.0)*0.35 + smoothstep(0.92,1.0,vnoise(p*vec3(800.0,40.0,800.0)))*-0.3*wear;
   } else if (pat < 6.5) {
     h = 0.0;
-  } else {                        // madera
+  } else if (pat < 7.5) {         // madera
     h = sin(p.y*400.0 + fbm3(p*30.0)*20.0)*0.3;
+  } else if (pat < 8.5) {         // runa luminosa: lisa
+    h = 0.0;
+  } else {                        // esmalte de placa: lisura con micro-ondulación de forja
+    h = fbm3(p*60.0)*0.12;
   }
   return h;
 }
@@ -63,12 +67,14 @@ export function makeCharMaterial({ bumpScale = 1.0, skinned = true, envIntensity
   mat.userData.bumpScale = { value: bumpScale };
   mat.userData.rimColor = { value: new THREE.Color(0, 0, 0) };
   mat.userData.edgeTint = { value: new THREE.Color(1, 1, 1) };
+  mat.userData.glow = { value: 1.0 };
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.cmBump = mat.userData.bumpScale;
     shader.uniforms.cmRim = mat.userData.rimColor;
     shader.uniforms.cmEdge = CHAR_EDGE.color;
     shader.uniforms.cmEdgeDir = CHAR_EDGE.dir;
     shader.uniforms.cmEdgeTint = mat.userData.edgeTint;
+    shader.uniforms.cmGlow = mat.userData.glow;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>
 attribute vec4 surf;
@@ -84,6 +90,7 @@ uniform vec3 cmRim;
 uniform vec3 cmEdge;
 uniform vec3 cmEdgeDir;
 uniform vec3 cmEdgeTint;
+uniform float cmGlow;
 varying vec4 vSurf;
 varying vec3 vObjPos;
 ${NOISE}
@@ -111,13 +118,17 @@ metalnessFactor = vSurf.y;`)
   // contorno direccional: más fuerte en los bordes orientados hacia la luz de recorte
   float edge = pow(1.0 - nv, 4.0) * clamp(dot(normal, cmEdgeDir) * 0.9 + 0.2, 0.0, 1.0);
   totalEmissiveRadiance += cmEdge * cmEdgeTint * edge;
+  // runas y ranuras pintadas con el patrón «glow»: emiten su propio color (alimentan el bloom)
+  if (vSurf.z > 7.5 && vSurf.z < 8.5) totalEmissiveRadiance += vColor.rgb * cmGlow;
 }`);
   };
-  mat.customProgramCacheKey = () => 'charmat-v4';
+  mat.customProgramCacheKey = () => 'charmat-v5';
   return mat;
 }
 
 // Copia independiente (mismos parámetros, uniformes propios: destello de impacto por instancia).
 export function cloneCharMaterial(m) {
-  return makeCharMaterial({ bumpScale: m.userData.bumpScale.value, envIntensity: m.envMapIntensity, side: m.side });
+  const c = makeCharMaterial({ bumpScale: m.userData.bumpScale.value, envIntensity: m.envMapIntensity, side: m.side });
+  c.userData.glow.value = m.userData.glow.value;
+  return c;
 }

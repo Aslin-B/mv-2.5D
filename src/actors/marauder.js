@@ -272,10 +272,10 @@ export class Marauder {
   spearSegment() { return { a: this.anim.bladeBase, b: this.anim.bladeTip }; }
 
   // Devuelve 'dead' | 'armor' | 'stagger'
-  takeHit(dmg, fromX, { heavy = false } = {}) {
+  takeHit(dmg, fromX, { heavy = false, light = false } = {}) {
     if (this.state === 'dead') return null;
     this.hp -= dmg;
-    this.flash = 1;
+    this.flash = light ? 0.6 : 1;
     const dir = sign(this.body.x - fromX) || -this.facing;
     if (this.hp <= 0) {
       this.hp = 0;
@@ -285,6 +285,15 @@ export class Marauder {
       this.vx = dir * 3.5;
       this.game.events.emit('enemyDead', { who: this, x: this.body.x, y: this.body.y });
       return 'dead';
+    }
+    // Saetas ligeras: duelen y avisan, pero no aturden (solo la carga o el cuerpo a cuerpo lo hacen).
+    if (light) {
+      this.vx += dir * 0.7;
+      if (!this.alerted) { this.alerted = true; this.game.events.emit('enemyAlert', { who: this }); }
+      if (this.state === 'patrol' || this.state === 'idle' || this.state === 'search' || this.state === 'return') this.setState('notice');
+      this.unseenT = 0; this.lastSeenX = fromX;
+      if (this.state !== 'attack' && this.state !== 'stagger') this.facing = -dir;
+      return 'light';
     }
     // Compromiso: a mitad de la preparación solo un golpe pesado interrumpe la estocada.
     if (this.state === 'attack' && this.attack && this.attack.t > 0.3 && this.attack.t < 0.82 && !heavy) {

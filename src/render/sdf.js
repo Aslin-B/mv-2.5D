@@ -57,6 +57,17 @@ export function ellipsoid(c, r, extra = {}) {
   };
 }
 
+// Lámina de grosor constante sobre un elipsoide (placas de armadura con canto visible).
+export function ellipsoidShell(c, r, th, extra = {}) {
+  const e = ellipsoid(c, r);
+  return {
+    ...extra, c, r,
+    min: [c[0] - r[0] - th, c[1] - r[1] - th, c[2] - r[2] - th],
+    max: [c[0] + r[0] + th, c[1] + r[1] + th, c[2] + r[2] + th],
+    d(px, py, pz) { return Math.abs(e.d(px, py, pz)) - th; },
+  };
+}
+
 // Caja redondeada orientada a ejes.
 export function roundBox(c, h, rad, extra = {}) {
   return {
