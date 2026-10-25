@@ -1,0 +1,23 @@
+{
+  "name": "acueducto-del-alba",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Primer nivel jugable de un juego original de acción y exploración medieval 2.5D (Three.js + WebGL2).",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:single": "vite build --mode single",
+    "preview": "vite preview",
+    "test": "node tests/functional/run.mjs",
+    "judge": "node tests/judge/capture.mjs"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "vite": "^7.3.7",
+    "vite-plugin-singlefile": "^2.3.4"
+  }
+}
