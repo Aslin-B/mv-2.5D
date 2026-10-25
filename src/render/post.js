@@ -12,6 +12,8 @@ import { HDR_SAFE } from './hdrSafe.js';
 // cinematográficas, destello de impacto y grano fino. Los perfiles reducen costes antes que la
 // tasa de simulación (§11.6).
 
+export const MASK_LAYER = 4;
+
 export const QUALITY = {
   alto: { pixelRatio: 1.0, msaa: 4, shadowSize: 4096, ao: true, bloom: true, sharpen: 0.4, label: 'Alto' },
   medio: { pixelRatio: 1.0, msaa: 4, shadowSize: 2048, ao: false, bloom: true, sharpen: 0.35, label: 'Medio' },
@@ -38,12 +40,18 @@ const FinalShader = {
     blackPoint: { value: 0 },
     sharpen: { value: 0 },
     texel: { value: new THREE.Vector2(1 / 1280, 1 / 720) },
+    // silueta de Aren (máscara a media resolución) para el contraste figura-fondo
+    tMask: { value: null },
+    maskOn: { value: 0 },
+    maskTexel: { value: new THREE.Vector2(1 / 640, 1 / 360) },
+    sepRim: { value: new THREE.Color(1, 0.86, 0.72) },
   },
   vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse; uniform float vignette, letterbox, flash, fade, grain, time, aspect, sat, contrast, blackPoint, sharpen;
     uniform vec3 flashColor, lift, shadowTint, highTint;
     uniform vec2 texel;
+    uniform sampler2D tMask; uniform float maskOn; uniform vec2 maskTexel; uniform vec3 sepRim;
     varying vec2 vUv;
     ${HDR_SAFE}
     float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233)) + time * 61.0) * 43758.5453); }
@@ -64,6 +72,47 @@ const FinalShader = {
       c = max(c - blackPoint, 0.0) / (1.0 - blackPoint);
       c = mix(c, c * c * (3.0 - 2.0 * c), contrast);
       c = c + lift * (1.0 - l);
+      // Contraste figura-fondo: donde el borde de Aren y el fondo inmediato tienen casi la misma luz,
+      // el borde interior de la silueta se aclara (contorno de luz) si el fondo es oscuro o se oscurece
+      // si el fondo es claro. Solo actúa dentro de la silueta y solo donde falta contraste: no dibuja
+      // una línea de contorno ni un halo sobre el escenario.
+      if (maskOn > 0.5) {
+        float m0 = texture2D(tMask, vUv).r;
+        if (m0 > 0.01) {
+          const vec2 D0 = vec2(1.0, 0.0), D1 = vec2(0.7071, 0.7071), D2 = vec2(0.0, 1.0), D3 = vec2(-0.7071, 0.7071);
+          vec2 R = maskTexel * 2.2;
+          float r0 = texture2D(tMask, vUv + D0 * R).r, r1 = texture2D(tMask, vUv - D0 * R).r;
+          float r2 = texture2D(tMask, vUv + D1 * R).r, r3 = texture2D(tMask, vUv - D1 * R).r;
+          float r4 = texture2D(tMask, vUv + D2 * R).r, r5 = texture2D(tMask, vUv - D2 * R).r;
+          float r6 = texture2D(tMask, vUv + D3 * R).r, r7 = texture2D(tMask, vUv - D3 * R).r;
+          float ring = (r0 + r1 + r2 + r3 + r4 + r5 + r6 + r7) * 0.125;
+          float e = m0 * smoothstep(0.98, 0.55, ring);
+          if (e > 0.001) {
+            // luz del fondo justo fuera del borde y de la figura justo dentro (antes de la gradación)
+            vec2 Q = maskTexel * 4.5;
+            float lb = 0.0, wb = 0.0, lh = 0.0, wh = 0.0;
+            vec2 dirs[8];
+            dirs[0] = D0; dirs[1] = -D0; dirs[2] = D1; dirs[3] = -D1; dirs[4] = D2; dirs[5] = -D2; dirs[6] = D3; dirs[7] = -D3;
+            for (int i = 0; i < 8; i++) {
+              vec2 uv = vUv + dirs[i] * Q;
+              float mk = texture2D(tMask, uv).r;
+              float lk = dot(hdrSafe(texture2D(tDiffuse, uv).rgb), vec3(0.2126, 0.7152, 0.0722));
+              lb += lk * (1.0 - mk); wb += 1.0 - mk;
+              lh += lk * mk; wh += mk;
+            }
+            if (wb > 0.5 && wh > 0.5) {
+              lb /= wb; lh /= wh;
+              float lc = dot(hdrSafe(texture2D(tDiffuse, vUv).rgb), vec3(0.2126, 0.7152, 0.0722));
+              float dl = mix(lh, lc, 0.5) - lb;
+              float need = clamp((0.16 - abs(dl)) / 0.16, 0.0, 1.0) * e;
+              // se empuja en el sentido que ya separa; si están igualados, según el fondo
+              bool up = dl > 0.02 || (dl > -0.02 && lb < 0.3);
+              if (up) c += sepRim * need * 0.16;
+              else c *= 1.0 - need * 0.42;
+            }
+          }
+        }
+      }
       vec2 q = vUv - 0.5; q.x *= aspect * 0.75;
       float v = smoothstep(0.95, 0.25, length(q));
       c *= mix(1.0, v, vignette);
@@ -141,6 +190,11 @@ export class PostFX {
     this.final = new ShaderPass(FinalShader);
     this.final.uniforms.sharpen.value = q.sharpen ?? 0;
     this.final.uniforms.texel.value.set(1 / (size.x * pr), 1 / (size.y * pr));
+    if (this.maskRT) this.maskRT.dispose();
+    this.maskRT = new THREE.WebGLRenderTarget(Math.max(1, Math.round(size.x * pr / 2)), Math.max(1, Math.round(size.y * pr / 2)), { depthBuffer: false });
+    this.maskMat = this.maskMat || new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false, side: THREE.DoubleSide });
+    this.final.uniforms.tMask.value = this.maskRT.texture;
+    this.final.uniforms.maskTexel.value.set(1 / this.maskRT.width, 1 / this.maskRT.height);
     composer.addPass(this.final);
     this.composer = composer;
   }
@@ -150,6 +204,26 @@ export class PostFX {
     this.final.uniforms.aspect.value = w / h;
     const pr = this.renderer.getPixelRatio();
     this.final.uniforms.texel.value.set(1 / (w * pr), 1 / (h * pr));
+    this.maskRT.setSize(Math.max(1, Math.round(w * pr / 2)), Math.max(1, Math.round(h * pr / 2)));
+    this.final.uniforms.maskTexel.value.set(1 / this.maskRT.width, 1 / this.maskRT.height);
+  }
+
+  // Silueta del héroe: los objetos con la capa MASK_LAYER se dibujan en blanco plano sobre negro a
+  // media resolución (sin sombras ni luces: es solo una máscara).
+  renderMask(on) {
+    const u = this.final.uniforms;
+    u.maskOn.value = on ? 1 : 0;
+    if (!on) return;
+    const r = this.renderer, sc = this.scene, cam = this.camera;
+    const bg = sc.background, ov = sc.overrideMaterial, lm = cam.layers.mask, au = r.shadowMap.autoUpdate;
+    const cc = r.getClearColor(this._cc || (this._cc = new THREE.Color())).clone(), ca = r.getClearAlpha();
+    sc.background = null; sc.overrideMaterial = this.maskMat; cam.layers.set(MASK_LAYER); r.shadowMap.autoUpdate = false;
+    r.setRenderTarget(this.maskRT);
+    r.setClearColor(0x000000, 1); r.clear(true, false, false);
+    r.render(sc, cam);
+    r.setRenderTarget(null);
+    sc.background = bg; sc.overrideMaterial = ov; cam.layers.mask = lm; r.shadowMap.autoUpdate = au;
+    r.setClearColor(cc, ca);
   }
 
   render(dt, p) {

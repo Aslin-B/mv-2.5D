@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CHAR_LIGHT_PARS, charLightGLSL, bindCharLight } from './charMaterial.js';
 
 // Cabello con tarjetas de mechón (la técnica habitual del pelo en tiempo real): cintas finas que
 // siguen curvas guía sobre el cuero cabelludo, con una textura de hebras generada por código y
@@ -153,6 +154,12 @@ export function hairMaterial(tex, color = '#2a211b') {
     anisotropy: 0.75, anisotropyRotation: 0,
     sheen: 0.25, sheenColor: new THREE.Color('#3a2a20'), sheenRoughness: 0.4,
   });
-  m.customProgramCacheKey = () => 'hair-v3';
+  m.onBeforeCompile = (sh) => {
+    bindCharLight(sh.uniforms);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>\n${CHAR_LIGHT_PARS}`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n${charLightGLSL('vec3(1.0)', '0.15', '0.06')}`);
+  };
+  m.customProgramCacheKey = () => 'hair-v4';
   return m;
 }

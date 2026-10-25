@@ -241,6 +241,73 @@ const S = () => g.state();
   check('El vigía dispara orbes', sawOrb, `orbes vistos=${sawOrb}`);
   check('Orbe devuelto con el golpe de éter destruye al vigía', reflected && s.sentinels[0].state === 'dead', `devuelto=${reflected} vigía=${s.sentinels[0].state} vida=${s.sentinels[0].hp}`);
 }
+// T18 capa de juego adelantada: al correr contra un escalón el cuerpo de Aren ya no queda cortado
+// por la cara delantera de los bloques (hasta z = 1,75, delante del plano de juego). Se compara la silueta
+// completa (máscara) con lo que se ve de Aren en la imagen final, con y sin el adelanto; y ningún
+// objeto del escenario comparte un material adelantado.
+{
+  await g.teleport(8, 0, 1);
+  await g.run({ right: true }, 32);
+  await g.input({});
+  const r = await g.eval(() => {
+    const G = window.__game.game, R = G.renderer, sc = G.scene, cam = G.camera.cam;
+    window.__game.settle(); window.__game.render();
+    const grab = () => {
+      const c = document.createElement('canvas'); c.width = R.domElement.width; c.height = R.domElement.height;
+      const x = c.getContext('2d'); x.drawImage(R.domElement, 0, 0); return x.getImageData(0, 0, c.width, c.height).data;
+    };
+    const heroObjs = [G.heroModel.root, ...G.heroCape.panels.map((p) => p.mesh)];
+    const setHero = (v) => { for (const o of heroObjs) o.visible = v; };
+    const post = () => { G.post.renderMask(false); G.post.render(0, { letterbox: 0, flash: 0, fade: 0, bloom: G.zoneBloom, vignette: 0.34, grade: G.grade }); };
+    for (const k in G.fx) G.fx[k].points.visible = false;
+    const saved = sc.children.map((o) => [o, o.visible]);
+    const bg = sc.background, tm = R.toneMapping, cc = R.getClearColor(G.lights.fill.color.clone()), ca = R.getClearAlpha();
+    for (const [o] of saved) o.visible = heroObjs.includes(o);
+    sc.background = null; sc.overrideMaterial = new G.laser.material.constructor({ color: 0xffffff, side: 2 });
+    R.toneMapping = 0; R.setRenderTarget(null); R.setClearColor(0x000000, 1); R.clear(); R.render(sc, cam);
+    const mask = grab();
+    for (const [o, v] of saved) o.visible = v;
+    sc.background = bg; sc.overrideMaterial = null; R.toneMapping = tm; R.setClearColor(cc, ca);
+    const visible = (pull) => {
+      G.depthPull.value = pull;
+      setHero(true); post(); const on = grab();
+      setHero(false); post(); const off = grab();
+      setHero(true);
+      let n = 0, v = 0;
+      for (let i = 0; i < mask.length; i += 4) if (mask[i] > 128) {
+        n++;
+        if (Math.max(Math.abs(on[i] - off[i]), Math.abs(on[i + 1] - off[i + 1]), Math.abs(on[i + 2] - off[i + 2])) > 6) v++;
+      }
+      return v / Math.max(n, 1);
+    };
+    const nominal = G.depthPull.value;
+    const without = visible(0), withPull = visible(nominal);
+    G.depthPull.value = nominal;
+    for (const k in G.fx) G.fx[k].points.visible = true;
+    // materiales adelantados usados fuera de la capa de juego
+    const layer = new Set();
+    const mark = (o) => o && o.traverse((q) => layer.add(q));
+    heroObjs.forEach(mark);
+    for (const e of G.enemies) { mark(e.model.root); e.cape.panels.forEach((p) => mark(p.mesh)); }
+    for (const s of G.sentinels) mark(s.model.root);
+    const orb = (o) => [o.group, o.wisps, o.flecks, o.sparks, o.bolts].forEach(mark);
+    orb(G.heroOrb); mark(G.trail.mesh); mark(G.laser);
+    for (const p of G.projectiles.pool) [p.outer, p.inner, p.glow].forEach(mark);
+    for (const o of G.projectiles.orbs) orb(o.orb);
+    ['dust', 'sparks', 'arcane'].forEach((k) => mark(G.fx[k].points));
+    let leaks = 0, missing = 0;
+    sc.traverse((o) => {
+      if (!o.material) return;
+      for (const m of [].concat(o.material)) {
+        if (m.userData.depthPull && !layer.has(o)) leaks++;
+        if (!m.userData.depthPull && layer.has(o)) missing++;
+      }
+    });
+    return { without, withPull, leaks, missing };
+  });
+  check('Aren entero junto a un escalón (capa de juego adelantada)', r.withPull > 0.9 && r.withPull - r.without > 0.04 && !r.leaks && !r.missing,
+    `silueta visible ${(r.withPull * 100).toFixed(1)} % (sin adelanto ${(r.without * 100).toFixed(1)} %) · materiales prestados ${r.leaks} · sin adelantar ${r.missing}`);
+}
 // T14 final del nivel
 {
   await g.eval(() => { const G = window.__game.game; for (const e of G.enemies) if (e.alive) e.takeHit(999, e.x - 1); });

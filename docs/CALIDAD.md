@@ -13,6 +13,10 @@
 > la tela en movimiento y el uso de herramientas. Ver
 > [`juez/iteracion-7.md`](juez/iteracion-7.md) (rondas 7–11) y
 > [`juez/iteracion-12.md`](juez/iteracion-12.md) (rondas 12–15).
+>
+> Iteración 16 (naturalidad): sin cortes del cuerpo contra los bloques cercanos, articulaciones con
+> pesos suavizados y cuaterniones duales, luz propia de personaje con contraste de silueta adaptado
+> al fondo y juntas del escenario cerradas. Ver [`juez/iteracion-16.md`](juez/iteracion-16.md).
 
 ## v3 · Evidencias
 
@@ -26,6 +30,10 @@
   sin que el cabello la tape.
 - En el juego: la secuencia de carga (semilla, condensación, eclipse, lanzamiento) con el harness de
   pruebas, para comprobar que lo que mejora en el estudio se ve igual jugando.
+- Naturalidad: la prueba funcional «Aren entero junto a un escalón» compara la silueta completa de
+  Aren (máscara) con lo que se ve de él en la imagen final al correr contra un escalón, con y sin la
+  capa de juego adelantada, y exige que ningún objeto del escenario comparta un material adelantado.
+  La separación figura-fondo se mide con la máscara exacta de Aren en las cinco salas.
 - Compatibilidad: la prueba funcional «Sin NaN ni apagones con la matemática de Safari» emula las GPU
   de Apple (`pow()` de base negativa = NaN) y exige un búfer HDR sin valores no finitos en las cinco
   salas y durante la carga. Todo sombreador nuevo debe acotar la base de `pow()` y no normalizar

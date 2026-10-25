@@ -71,7 +71,9 @@ export class Kit {
     while (x < x1 - 0.05) {
       const w = Math.min(this.r(0.7, 1.3), x1 - x);
       const inset = this.r(0, 0.03);
-      this.box(x + 0.01, top - 0.3, x + w - 0.01, top - inset * 0.3, z0, z1 + this.r(-0.04, 0.06), opts.capMat || mat, { radius: 0.035 });
+      // bloques a hueso (sin rendija pasante) y frente casi alineado: antes cada bloque sobresalía
+      // o se metía hasta 6 cm y las juntas abiertas se leían como costuras
+      this.box(x, top - 0.3, x + w, top - inset * 0.3, z0, z1 + this.r(-0.015, 0.02), opts.capMat || mat, { radius: 0.03 });
       x += w;
     }
   }
@@ -80,7 +82,8 @@ export class Kit {
   arch(cx, springY, span, z, depth = 0.9, ring = 0.42, mat = this.m.stone, opts = {}) {
     const R = span / 2;
     const n = opts.voussoirs || Math.max(7, Math.round((Math.PI * R) / 0.45) | 1);
-    const gap = 0.012;
+    // junta fina entre dovelas: una rendija ancha dejaba ver el fondo (o la enjuta) como rayos
+    const gap = 0.0035;
     for (let i = 0; i < n; i++) {
       const a0 = Math.PI - (i / n) * Math.PI - gap, a1 = Math.PI - ((i + 1) / n) * Math.PI + gap;
       const key = i === Math.floor(n / 2);
@@ -97,13 +100,50 @@ export class Kit {
     }
   }
 
-  // Pilar de bloques apilados.
+  // Enjuta: el muro entre el trasdós de un arco, los pilares y la cornisa. Sin ella, entre el arco
+  // y los pilares quedaban huecos triangulares por los que se veía el fondo oscuro (juntas abiertas
+  // en todo el acueducto). Queda algo retranqueada respecto al arco para que las dovelas resalten.
+  spandrel(cx, springY, R, x0, x1, top, z, depth, mat = this.m.stone, opts = {}) {
+    // Cara frontal del rectángulo pilar-cornisa menos el disco del arco, en franjas radiales: cada
+    // franja va del círculo de radio R al borde del rectángulo (donde el disco se sale, la franja
+    // queda vacía). Las esquinas superiores entran como ángulos de muestra para seguir el borde.
+    const L = x0 - cx, Rr = x1 - cx, H = top - springY;
+    const angs = [];
+    for (let i = 0; i <= 32; i++) angs.push((i / 32) * Math.PI);
+    angs.push(Math.atan2(H, Rr), Math.atan2(H, L));
+    angs.sort((a, b) => a - b);
+    const hit = (a) => {
+      const c = Math.cos(a), sn = Math.sin(a);
+      let t = Infinity;
+      if (c > 1e-6) t = Math.min(t, Rr / c);
+      if (c < -1e-6) t = Math.min(t, L / c);
+      if (sn > 1e-6) t = Math.min(t, H / sn);
+      const o = [c * t, sn * t], r = Math.min(R, t);
+      return [o, [c * r, sn * r]];
+    };
+    const pos = [];
+    const zf = z + depth / 2;
+    for (let i = 0; i < angs.length - 1; i++) {
+      const [o0, i0] = hit(angs[i]), [o1, i1] = hit(angs[i + 1]);
+      if (Math.hypot(o0[0] - i0[0], o0[1] - i0[1]) + Math.hypot(o1[0] - i1[0], o1[1] - i1[1]) < 1e-4) continue;
+      // cara hacia +z (cámara): orden antihorario visto de frente
+      pos.push(i0[0], i0[1], zf, o0[0], o0[1], zf, o1[0], o1[1], zf);
+      pos.push(i0[0], i0[1], zf, o1[0], o1[1], zf, i1[0], i1[1], zf);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.computeVertexNormals();
+    g.translate(cx, springY, 0);
+    this.batch.push(mat, g, opts);
+  }
+
+  // Pilar de bloques apilados (juntas cerradas: el canto redondeado ya dibuja la llaga).
   pier(cx, y0, y1, z, w = 0.9, d = 0.9, mat = this.m.stone, opts = {}) {
     let y = y0;
     while (y < y1 - 0.05) {
       const h = Math.min(this.r(0.45, 0.65), y1 - y);
       const jw = this.r(-0.02, 0.02);
-      this.box(cx - w / 2 + jw, y + 0.008, cx + w / 2 + jw, y + h - 0.008, z - d / 2, z + d / 2, mat, { radius: 0.035, ...opts });
+      this.box(cx - w / 2 + jw, y, cx + w / 2 + jw, y + h, z - d / 2, z + d / 2, mat, { radius: 0.035, ...opts });
       y += h;
     }
   }

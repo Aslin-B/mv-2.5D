@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CHAR_LIGHT_PARS, charLightGLSL, bindCharLight } from './charMaterial.js';
 
 // Cabello por hebras para los planos cortos: cada curva guía (las mismas de las tarjetas) se
 // reparte en decenas de hebras finas que llenan el volumen del mechón, se juntan hacia la punta y
@@ -92,6 +93,10 @@ export function hairStrandMaterial(color = '#2a201a') {
   // sumar un velo gris
   const m = new THREE.MeshPhysicalMaterial({ color, vertexColors: true, roughness: 0.46, metalness: 0, side: THREE.DoubleSide, envMapIntensity: 0.06, specularIntensity: 0.3, specularColor: new THREE.Color('#9c7458') });
   m.onBeforeCompile = (sh) => {
+    bindCharLight(sh.uniforms);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>\n${CHAR_LIGHT_PARS}`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n${charLightGLSL('vec3(1.0)', '0.15', '0.06')}`);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
 attribute vec3 aTan;
@@ -110,6 +115,6 @@ vec3 objectNormal = dot(hM, hM) > 1e-10 ? normalize(hM) : normal;`)
 vec3 hS = cross(hT, hV);
 vec3 transformed = vec3(position) + (dot(hS, hS) > 1e-12 ? normalize(hS) : vec3(0.0)) * aStrand.x * aStrand.y;`);
   };
-  m.customProgramCacheKey = () => 'hair-strands-v3';
+  m.customProgramCacheKey = () => 'hair-strands-v4';
   return m;
 }

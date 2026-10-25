@@ -8,7 +8,38 @@ import { HDR_SAFE } from './hdrSafe.js';
 
 // Luz de contorno compartida por los personajes (dirección en espacio de vista y color/intensidad
 // por zona). Imita la luz de recorte de escena para separar las siluetas del fondo (biblia §4.2).
-export const CHAR_EDGE = { color: { value: new THREE.Color(0, 0, 0) }, dir: { value: new THREE.Vector3(0.45, 0.9, 0).normalize() } };
+export const CHAR_EDGE = {
+  color: { value: new THREE.Color(0, 0, 0) }, dir: { value: new THREE.Vector3(0.45, 0.9, 0).normalize() },
+  // anchura del contorno (exponente de Fresnel: menor = más ancho) y relleno propio de los personajes
+  power: { value: 4.0 }, fill: { value: new THREE.Color(0, 0, 0) },
+};
+
+// Luz propia de los personajes, que no toca el escenario (como el «enlace de luces» de los motores
+// de cine): contorno direccional desde la luz de recorte y un relleno suave desde la cámara que
+// levanta los medios tonos del cuero y la tela oscuros. Sin ella, Aren (abrigo carbón) se fundía con
+// la piedra en sombra. La usan el cuerpo, el abrigo y el cabello.
+export const CHAR_LIGHT_PARS = /* glsl */ `
+uniform vec3 cmEdge;
+uniform vec3 cmEdgeDir;
+uniform float cmEdgePow;
+uniform vec3 cmFill;
+`;
+export function charLightGLSL(tint = 'vec3(1.0)', gain = '1.0', fillGain = gain) {
+  return /* glsl */ `
+{
+  float clNv = clamp(dot(normalize(vViewPosition), normal), 0.0, 1.0);
+  float clEdge = pow(1.0 - clNv, cmEdgePow) * clamp(dot(normal, cmEdgeDir) * 0.9 + 0.2, 0.0, 1.0);
+  totalEmissiveRadiance += cmEdge * ${tint} * clEdge * ${gain};
+  float clFill = 0.4 + 0.6 * clamp(dot(normal, vec3(0.27, 0.46, 0.85)), 0.0, 1.0);
+  totalEmissiveRadiance += diffuseColor.rgb * cmFill * clFill * ${fillGain};
+}`;
+}
+export function bindCharLight(uniforms) {
+  uniforms.cmEdge = CHAR_EDGE.color;
+  uniforms.cmEdgeDir = CHAR_EDGE.dir;
+  uniforms.cmEdgePow = CHAR_EDGE.power;
+  uniforms.cmFill = CHAR_EDGE.fill;
+}
 
 export const PATTERN = { skin: 0, quilt: 1, leather: 2, cloth: 3, hair: 4, metal: 5, plain: 6, wood: 7, glow: 8, enamel: 9, ornate: 10, brocade: 11, embossed: 12 };
 
@@ -92,6 +123,76 @@ float cmHeight(vec3 p, float pat, float wear){
 }
 `;
 
+// Piel con cuaterniones duales (Kavan et al., 2007) en lugar de la mezcla lineal de matrices de
+// Three.js. La mezcla lineal promedia matrices de rotación y el resultado encoge: con pesos repartidos
+// en el codo o la rodilla, al doblarse 90° la articulación se aplasta y al girar la muñeca el antebrazo
+// se estrecha como un caramelo. Mezclando las transformaciones como cuaterniones duales cada vértice se
+// mueve con una transformación rígida y la articulación conserva su volumen. Admite escala uniforme
+// (los personajes se escalan enteros al morir), que se mezcla aparte.
+const DQ_PARS = /* glsl */ `
+#ifdef USE_SKINNING
+vec4 dqQuat(mat3 m) {
+  float tr = m[0][0] + m[1][1] + m[2][2];
+  if (tr > 0.0) { float s = sqrt(tr + 1.0) * 2.0; return vec4((m[1][2] - m[2][1]) / s, (m[2][0] - m[0][2]) / s, (m[0][1] - m[1][0]) / s, 0.25 * s); }
+  if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) { float s = sqrt(max(1.0 + m[0][0] - m[1][1] - m[2][2], 1e-8)) * 2.0; return vec4(0.25 * s, (m[1][0] + m[0][1]) / s, (m[2][0] + m[0][2]) / s, (m[1][2] - m[2][1]) / s); }
+  if (m[1][1] > m[2][2]) { float s = sqrt(max(1.0 + m[1][1] - m[0][0] - m[2][2], 1e-8)) * 2.0; return vec4((m[1][0] + m[0][1]) / s, 0.25 * s, (m[2][1] + m[1][2]) / s, (m[2][0] - m[0][2]) / s); }
+  float s = sqrt(max(1.0 + m[2][2] - m[0][0] - m[1][1], 1e-8)) * 2.0;
+  return vec4((m[2][0] + m[0][2]) / s, (m[2][1] + m[1][2]) / s, 0.25 * s, (m[0][1] - m[1][0]) / s);
+}
+vec4 dqMul(vec4 a, vec4 b) { return vec4(a.w * b.xyz + b.w * a.xyz + cross(a.xyz, b.xyz), a.w * b.w - dot(a.xyz, b.xyz)); }
+vec3 dqRot(vec4 q, vec3 v) { return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v); }
+// acumula un hueso: parte real (rotación), parte dual (traslación) y escala
+void dqAdd(mat4 M, float w, vec4 ref, inout vec4 r, inout vec4 d, inout float sc) {
+  float s = length(M[0].xyz);
+  vec4 q = dqQuat(mat3(M) / max(s, 1e-6));
+  if (dot(q, ref) < 0.0) q = -q;
+  r += w * q;
+  d += w * 0.5 * dqMul(vec4(M[3].xyz, 0.0), q);
+  sc += w * s;
+}
+#endif
+`;
+
+const DQ_BASE = /* glsl */ `
+#ifdef USE_SKINNING
+  mat4 boneMatX = getBoneMatrix( skinIndex.x );
+  mat4 boneMatY = getBoneMatrix( skinIndex.y );
+  mat4 boneMatZ = getBoneMatrix( skinIndex.z );
+  mat4 boneMatW = getBoneMatrix( skinIndex.w );
+  vec4 dqR = vec4(0.0), dqD = vec4(0.0);
+  float dqS = 0.0;
+  {
+    vec4 ref = dqQuat(mat3(boneMatX) / max(length(boneMatX[0].xyz), 1e-6));
+    dqAdd(boneMatX, skinWeight.x, ref, dqR, dqD, dqS);
+    dqAdd(boneMatY, skinWeight.y, ref, dqR, dqD, dqS);
+    dqAdd(boneMatZ, skinWeight.z, ref, dqR, dqD, dqS);
+    dqAdd(boneMatW, skinWeight.w, ref, dqR, dqD, dqS);
+    float dqL = max(length(dqR), 1e-6);
+    dqR /= dqL; dqD /= dqL;
+    dqS /= max(skinWeight.x + skinWeight.y + skinWeight.z + skinWeight.w, 1e-6);
+  }
+  vec3 dqT = 2.0 * (dqR.w * dqD.xyz - dqD.w * dqR.xyz + cross(dqR.xyz, dqD.xyz));
+#endif
+`;
+
+const DQ_NORMAL = /* glsl */ `
+#ifdef USE_SKINNING
+  objectNormal = mat3(bindMatrixInverse) * dqRot(dqR, mat3(bindMatrix) * objectNormal);
+  #ifdef USE_TANGENT
+  objectTangent = mat3(bindMatrixInverse) * dqRot(dqR, mat3(bindMatrix) * objectTangent);
+  #endif
+#endif
+`;
+
+const DQ_SKIN = /* glsl */ `
+#ifdef USE_SKINNING
+  {
+    vec3 sv = (bindMatrix * vec4(transformed, 1.0)).xyz;
+    transformed = (bindMatrixInverse * vec4(dqRot(dqR, sv * dqS) + dqT, 1.0)).xyz;
+  }
+#endif
+`;
+
 export function makeCharMaterial({ bumpScale = 1.0, skinned = true, envIntensity = 1.0, side = THREE.FrontSide } = {}) {
   const mat = new THREE.MeshStandardMaterial({
     vertexColors: true, roughness: 1, metalness: 1, side, envMapIntensity: envIntensity,
@@ -103,11 +204,15 @@ export function makeCharMaterial({ bumpScale = 1.0, skinned = true, envIntensity
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.cmBump = mat.userData.bumpScale;
     shader.uniforms.cmRim = mat.userData.rimColor;
-    shader.uniforms.cmEdge = CHAR_EDGE.color;
-    shader.uniforms.cmEdgeDir = CHAR_EDGE.dir;
+    bindCharLight(shader.uniforms);
     shader.uniforms.cmEdgeTint = mat.userData.edgeTint;
     shader.uniforms.cmGlow = mat.userData.glow;
     shader.vertexShader = shader.vertexShader
+      .replace('#include <skinning_pars_vertex>', `#include <skinning_pars_vertex>
+${DQ_PARS}`)
+      .replace('#include <skinbase_vertex>', DQ_BASE)
+      .replace('#include <skinnormal_vertex>', DQ_NORMAL)
+      .replace('#include <skinning_vertex>', DQ_SKIN)
       .replace('#include <common>', `#include <common>
 attribute vec4 surf;
 varying vec4 vSurf;
@@ -121,8 +226,7 @@ vObjN = normal;`);
       .replace('#include <common>', `#include <common>
 uniform float cmBump;
 uniform vec3 cmRim;
-uniform vec3 cmEdge;
-uniform vec3 cmEdgeDir;
+${CHAR_LIGHT_PARS}
 uniform vec3 cmEdgeTint;
 uniform float cmGlow;
 varying vec4 vSurf;
@@ -212,9 +316,8 @@ if (vSurf.z > 9.5 && vSurf.z < 11.5) metalnessFactor = mix(metalnessFactor, 1.0,
   float fres = pow(1.0 - nv, 2.0);
   // casi todo en el borde: el interior conserva el color y el material (no un maniquí blanco)
   totalEmissiveRadiance += cmRim * 1.1 * fres * fres;
-  // contorno direccional: más fuerte en los bordes orientados hacia la luz de recorte
-  float edge = pow(1.0 - nv, 4.0) * clamp(dot(normal, cmEdgeDir) * 0.9 + 0.2, 0.0, 1.0);
-  totalEmissiveRadiance += cmEdge * cmEdgeTint * edge;
+  // contorno direccional (más fuerte en los bordes orientados hacia la luz de recorte) y relleno
+${charLightGLSL('cmEdgeTint')}
   // runas y ranuras pintadas con el patrón «glow»: emiten su propio color (alimentan el bloom)
   if (vSurf.z > 7.5 && vSurf.z < 8.5) totalEmissiveRadiance += vColor.rgb * cmGlow;
 }`)
@@ -224,7 +327,7 @@ if (vSurf.z > 9.5 && vSurf.z < 11.5) metalnessFactor = mix(metalnessFactor, 1.0,
 // (prueba por bits: isnan() puede desaparecer con la matemática rápida de Metal)
 gl_FragColor.rgb = min(hdrSafe(gl_FragColor.rgb), vec3(48.0));`);
   };
-  mat.customProgramCacheKey = () => 'charmat-v13';
+  mat.customProgramCacheKey = () => 'charmat-v15';
   return mat;
 }
 

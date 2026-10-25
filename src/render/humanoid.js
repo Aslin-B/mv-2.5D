@@ -208,7 +208,8 @@ export function standardBody(scene, P, B, mats) {
     const L = s > 0 ? 'L' : 'R';
     const d = s > 0 ? dirL : mir(dirL);
     const J = pos['arm' + L], E = pos['fore' + L], W = pos['hand' + L];
-    scene.add(ellipsoid(add(add(J, scl(d, 0.035)), [0.012 * s, 0.01, 0]), [0.066 * ab, 0.078 * ab, 0.072 * ab], { bone: 'arm' + L, mat: mats.arm }));
+    // deltoides algo más contenido: con el brazo en alto ya no sobresale por encima del hombro como una bola
+    scene.add(ellipsoid(add(add(J, scl(d, 0.04)), [0.01 * s, 0.002, 0]), [0.061 * ab, 0.071 * ab, 0.068 * ab], { bone: 'arm' + L, mat: mats.arm }));
     scene.add(roundCone(J, E, 0.054 * ab, 0.041 * ab, { bone: 'arm' + L, boneB: 'fore' + L, blendFrom: 0.78, blendMax: 0.5, mat: mats.arm }));
     scene.add(ellipsoid(add(add(J, scl(d, 0.15)), [0, 0, 0.016]), [0.043 * ab, 0.075, 0.046 * ab], { bone: 'arm' + L, mat: mats.arm }));
     scene.add(roundCone(E, W, 0.043 * ab, 0.031 * ab, { bone: 'fore' + L, mat: mats.forearm }));
@@ -295,7 +296,45 @@ export function buildHand(side, B, opts = {}) {
 // ao: oclusión horneada en el color de vértice. Mide cuánto espacio libre hay a lo largo de la
 // normal (a `dist` metros) dentro de la propia escena SDF: pliegues, comisuras, juntas y el
 // interior de las mangas se oscurecen sin coste en tiempo de ejecución.
-export function meshToGeometry(mesh, scene, paint, { skin = false, boneIndex = null, sigma = 0.03, origin = [0, 0, 0], ao = null } = {}) {
+// Suavizado de pesos de piel por difusión sobre la malla (Laplaciano, vecinos por arista).
+// Los pesos que salen de las primitivas cambian de hueso en pocos milímetros: el hombro giraba
+// entero con el brazo como una bola y codos y rodillas se doblaban como bisagras. Difundirlos unos
+// centímetros reparte la torsión entre los huesos vecinos, como haría un pintado de pesos a mano.
+// Cada vértice se acerca a la media de sus vecinos `iters` veces con fuerza `alpha`.
+function smoothWeights(W, n, nb, indices, { iters = 10, alpha = 0.5 } = {}) {
+  const deg = new Uint32Array(n + 1);
+  for (let i = 0; i < indices.length; i += 3) {
+    const a = indices[i], b = indices[i + 1], c = indices[i + 2];
+    deg[a] += 2; deg[b] += 2; deg[c] += 2;
+  }
+  const start = new Uint32Array(n + 1);
+  for (let v = 0; v < n; v++) start[v + 1] = start[v] + deg[v];
+  const nbr = new Uint32Array(start[n]);
+  const fill = start.slice(0, n);
+  for (let i = 0; i < indices.length; i += 3) {
+    const a = indices[i], b = indices[i + 1], c = indices[i + 2];
+    nbr[fill[a]++] = b; nbr[fill[a]++] = c;
+    nbr[fill[b]++] = a; nbr[fill[b]++] = c;
+    nbr[fill[c]++] = a; nbr[fill[c]++] = b;
+  }
+  let src = W, dst = new Float32Array(W.length);
+  for (let it = 0; it < iters; it++) {
+    for (let v = 0; v < n; v++) {
+      const o = v * nb, k0 = start[v], k1 = start[v + 1];
+      if (k1 === k0) { for (let b = 0; b < nb; b++) dst[o + b] = src[o + b]; continue; }
+      const f = alpha / (k1 - k0);
+      for (let b = 0; b < nb; b++) dst[o + b] = src[o + b] * (1 - alpha);
+      for (let k = k0; k < k1; k++) {
+        const q = nbr[k] * nb;
+        for (let b = 0; b < nb; b++) dst[o + b] += src[q + b] * f;
+      }
+    }
+    const t = src; src = dst; dst = t;
+  }
+  if (src !== W) W.set(src);
+}
+
+export function meshToGeometry(mesh, scene, paint, { skin = false, boneIndex = null, sigma = 0.03, origin = [0, 0, 0], ao = null, smooth = 0 } = {}) {
   const { positions, normals, indices } = mesh;
   const n = positions.length / 3;
   const colors = new Float32Array(n * 3);
@@ -303,6 +342,9 @@ export function meshToGeometry(mesh, scene, paint, { skin = false, boneIndex = n
   const skinIndex = skin ? new Uint16Array(n * 4) : null;
   const skinWeight = skin ? new Float32Array(n * 4) : null;
   const pos = new Float32Array(positions.length);
+  // pesos completos por hueso (antes de quedarse con los 4 mayores), para poder suavizarlos
+  const nb = skin ? Math.max(...Object.values(boneIndex)) + 1 : 0;
+  const W = skin ? new Float32Array(n * nb) : null;
   for (let v = 0; v < n; v++) {
     const x = positions[v * 3], y = positions[v * 3 + 1], z = positions[v * 3 + 2];
     const an = scene.analyze(x, y, z, sigma);
@@ -318,14 +360,32 @@ export function meshToGeometry(mesh, scene, paint, { skin = false, boneIndex = n
     surf[v * 4] = pr.r; surf[v * 4 + 1] = pr.m; surf[v * 4 + 2] = pr.p; surf[v * 4 + 3] = pr.w ?? 0.5;
     pos[v * 3] = x - origin[0]; pos[v * 3 + 1] = y - origin[1]; pos[v * 3 + 2] = z - origin[2];
     if (skin) {
-      const arr = [...an.bones.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
       let sum = 0;
-      for (const [, w] of arr) sum += w;
+      for (const [, w] of an.bones) sum += w;
+      for (const [b, w] of an.bones) W[v * nb + boneIndex[b]] += w / sum;
+    }
+  }
+  if (skin) {
+    if (smooth) {
+      smoothWeights(W, n, nb, indices, smooth);
+      // la difusión no debe pasar de una pierna a la otra por la entrepierna (ni de un brazo al otro)
+      const side = Object.entries(boneIndex).map(([name, i]) => [i, name.endsWith('L') ? 1 : name.endsWith('R') ? -1 : 0]);
+      for (let v = 0; v < n; v++) {
+        const sx = Math.sign(pos[v * 3] + origin[0]);
+        if (!sx) continue;
+        for (const [i, sd] of side) if (sd === -sx) W[v * nb + i] = 0;
+      }
+    }
+    const order = new Int32Array(nb);
+    for (let v = 0; v < n; v++) {
+      const o = v * nb;
+      for (let b = 0; b < nb; b++) order[b] = b;
+      const top = Array.from(order).sort((a, b) => W[o + b] - W[o + a]).slice(0, 4);
+      let sum = 0;
+      for (const b of top) sum += W[o + b];
       for (let i = 0; i < 4; i++) {
-        if (i < arr.length) {
-          skinIndex[v * 4 + i] = boneIndex[arr[i][0]];
-          skinWeight[v * 4 + i] = arr[i][1] / sum;
-        }
+        skinIndex[v * 4 + i] = top[i];
+        skinWeight[v * 4 + i] = sum > 0 ? W[o + top[i]] / sum : (i === 0 ? 1 : 0);
       }
     }
   }
@@ -407,7 +467,7 @@ export function shellGeometry({ rx, ry, rz, phi0 = 0, phi1 = Math.PI * 2, th0 = 
 }
 
 // Ensambla el personaje: SkinnedMesh del cuerpo + piezas rígidas por hueso.
-export function assembleCharacter({ P, bodyScene, bodyPaint, bodyCell = 0.0125, material, fingers = false, bodyAO = null }) {
+export function assembleCharacter({ P, bodyScene, bodyPaint, bodyCell = 0.0125, material, fingers = false, bodyAO = null, skinSmooth = { iters: 36, alpha: 0.5 } }) {
   const S = buildSkeleton(P, { fingers });
   const root = new THREE.Group();
   const boneList = BONE_NAMES.map((n) => S.bones[n]);
@@ -415,7 +475,7 @@ export function assembleCharacter({ P, bodyScene, bodyPaint, bodyCell = 0.0125, 
   root.add(S.bones.hips);
   root.updateMatrixWorld(true);
   const mesh = surfaceNets(bodyScene, bodyCell);
-  const geo = meshToGeometry(mesh, bodyScene, bodyPaint, { skin: true, boneIndex, sigma: 0.022, ao: bodyAO });
+  const geo = meshToGeometry(mesh, bodyScene, bodyPaint, { skin: true, boneIndex, sigma: 0.022, ao: bodyAO, smooth: skinSmooth });
   const skinned = new THREE.SkinnedMesh(geo, material);
   skinned.castShadow = true;
   skinned.receiveShadow = true;

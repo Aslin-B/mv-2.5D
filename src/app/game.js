@@ -17,11 +17,12 @@ import { buildMarauder, cloneMarauder } from '../render/marauderModel.js';
 import { Cape } from '../render/cloth.js';
 import { CHAR_EDGE } from '../render/charMaterial.js';
 import { SwordTrail } from '../render/trail.js';
+import { pullTree, DEPTH_PULL } from '../render/depthPull.js';
 import { Particles, Debris } from '../render/particles.js';
 import { buildSky, buildMountains, buildRuins, buildLights, updateSun } from '../render/environment.js';
 import { softDot, shaftTexture, waterNormals } from '../render/textures.js';
 import { GameCamera, sampleCameraZone } from '../render/camera.js';
-import { PostFX, QUALITY } from '../render/post.js';
+import { PostFX, QUALITY, MASK_LAYER } from '../render/post.js';
 import { GameAudio } from '../audio/audio.js';
 import { HUD } from '../ui/hud.js';
 import { Screens } from '../ui/screens.js';
@@ -180,6 +181,23 @@ export class Game {
       arcane: new Particles(1200, this.tex.dot, { additive: true, fogged: false }),
     };
     for (const k in this.fx) scene.add(this.fx[k].points);
+    // Capa de juego adelantada en profundidad: personajes, abrigos y efectos de combate ya no se
+    // cortan contra la cara delantera de escalones y paredes (ver depthPull.js). La niebla ambiental,
+    // las motas y las brasas del escenario se quedan donde están.
+    {
+      const world = new Set(Object.values(this.level.mats));
+      const orb = (o) => [o.group, o.wisps, o.flecks, o.sparks, o.bolts];
+      const layer = [model.root, ...this.heroCape.panels.map((p) => p.mesh), ...orb(this.heroOrb), this.trail.mesh, this.laser,
+        ...this.projectiles.pool.flatMap((p) => [p.outer, p.inner, p.glow]), ...this.projectiles.orbs.flatMap((o) => orb(o.orb)),
+        this.fx.dust.points, this.fx.sparks.points, this.fx.arcane.points];
+      for (const e of this.enemies) layer.push(e.model.root, ...e.cape.panels.map((p) => p.mesh));
+      for (const o of layer) pullTree(o);
+      for (const s of this.sentinels) {
+        const swap = pullTree(s.model.root, world);
+        s.model.materials = s.model.materials.map((m) => swap.get(m) || m);
+      }
+      this.depthPull = DEPTH_PULL;
+    }
     this.debris = new Debris(scene, this.level.mats.stone);
     this.glints = [];
     for (let i = 0; i < 4; i++) {
@@ -187,6 +205,17 @@ export class Game {
       s.visible = false; s.renderOrder = 20;
       scene.add(s);
       this.glints.push({ s, t: 0, dur: 0.5, size: 1 });
+    }
+
+    // silueta de Aren para el contraste figura-fondo del posproceso: solo piezas opacas (las
+    // tarjetas con recorte alfa y los destellos saldrían como rectángulos en la máscara)
+    {
+      const tag = (o) => o.traverse((q) => {
+        const m = q.material;
+        if ((q.isMesh || q.isSkinnedMesh) && m && !Array.isArray(m) && !m.transparent && !(m.alphaTest > 0)) q.layers.enable(MASK_LAYER);
+      });
+      tag(model.root);
+      for (const p of this.heroCape.panels) tag(p.mesh);
     }
 
     // Cámara y posproceso
@@ -780,7 +809,11 @@ export class Game {
     const e = CHAR_EDGE.color.value;
     this._edgeT = lerp(this._edgeT ?? z.rim, z.rim, k);
     const w = clamp((this.interior - 0.3) / 0.5, 0, 1);
-    e.setRGB(lerp(1.0, 1.0, w), lerp(0.86, 0.66, w), lerp(0.72, 0.42, w)).multiplyScalar(this._edgeT);
+    e.setRGB(lerp(1.0, 1.0, w), lerp(0.86, 0.66, w), lerp(0.72, 0.42, w)).multiplyScalar(this._edgeT * 1.5);
+    // contorno más ancho que en el plató y relleno propio: Aren no se funde con la piedra en sombra
+    CHAR_EDGE.power.value = 2.8;
+    if (this.post) this.post.final.uniforms.sepRim.value.setRGB(1.0, lerp(0.86, 0.66, w), lerp(0.72, 0.42, w));
+    CHAR_EDGE.fill.value.setRGB(lerp(0.9, 1.0, w), lerp(0.88, 0.8, w), lerp(0.95, 0.7, w)).multiplyScalar(lerp(0.45, 0.35, w));
   }
 
   // ---------------------------------------------------------------------------------
@@ -861,6 +894,8 @@ export class Game {
     this.flash = Math.max(0, this.flash - dt * 2.2);
     this.fade = damp(this.fade, this.fadeTarget, 0.12, dt);
     this.letterbox = damp(this.letterbox, this.letterboxTarget, 0.25, dt);
+    // contraste de silueta solo a escala de juego: en los planos cortos Aren ya llena el encuadre
+    this.post.renderMask(this.heroModel.root.visible && this.state !== 'title' && this.camera.cineW < 0.2);
     this.post.render(dt, { letterbox: this.letterbox, flash: this.flash, fade: this.fade, bloom: this.zoneBloom, vignette: 0.34, grade: this.grade });
 
     // Interfaz

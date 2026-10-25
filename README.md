@@ -52,7 +52,7 @@ fondo se ven cordilleras de roca pintada, ruinas góticas en la bruma y bandadas
 ## Pruebas y juez de calidad
 
 ```bash
-npm test                               # 31 pruebas funcionales deterministas (Chromium sin cabeza)
+npm test                               # 32 pruebas funcionales deterministas (Chromium sin cabeza)
 node tests/judge/capture.mjs <n>       # capturas reales, tiras de animación y métricas
 node tests/judge/summary.mjs <n>       # tabla de métricas
 node tests/judge/preview.mjs <dir> x,y,pasos,nombre ...   # capturas rápidas por sala
@@ -77,6 +77,12 @@ Desde la iteración 7 el juez (v3) compara además al mago con la lámina de la 
 recuadro (la lámina tampoco se guarda en el repositorio). Estado tras la iteración 15: **5,0 / 10**
 frente a la lámina; el detalle mediano por sala sube de 4,0 a 4,4 (objetivo 5–12). Ver
 [`docs/juez/iteracion-12.md`](docs/juez/iteracion-12.md).
+
+La iteración 16 trata la naturalidad: los personajes y sus efectos ya no se cortan contra la cara de
+escalones y paredes (capa de juego adelantada en profundidad), las articulaciones usan pesos de piel
+suavizados y cuaterniones duales, Aren tiene luz propia y un contraste de silueta que se adapta al
+fondo, y se cierran las juntas abiertas del escenario. Ver
+[`docs/juez/iteracion-16.md`](docs/juez/iteracion-16.md).
 
 ## Estructura
 

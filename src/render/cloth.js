@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CHAR_LIGHT_PARS, charLightGLSL, bindCharLight } from './charMaterial.js';
 
 // Capa corta dividida (dos paneles) simulada con Verlet: gravedad, viento, amortiguación,
 // restricciones de distancia y colisión con cápsulas del cuerpo. Se actualiza en el paso fijo
@@ -185,8 +186,10 @@ export class Cape {
       mat.onBeforeCompile = (sh) => {
         sh.uniforms.uLining = { value: lin };
         sh.uniforms.uFlip = { value: liningFlip ? 1 : 0 };
+        bindCharLight(sh.uniforms);
         sh.fragmentShader = sh.fragmentShader
-          .replace('#include <common>', '#include <common>\nuniform vec3 uLining;\nuniform float uFlip;')
+          .replace('#include <common>', `#include <common>\nuniform vec3 uLining;\nuniform float uFlip;\n${CHAR_LIGHT_PARS}`)
+          .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n${charLightGLSL('vec3(1.0)', '(clothOuter ? 0.75 : 0.3)', '(clothOuter ? 0.8 : 0.35)')}`)
           .replace('#include <map_fragment>', `#include <map_fragment>
 bool clothOuter = gl_FrontFacing;
 if (!clothOuter) diffuseColor.rgb = uLining * (0.75 + 0.5 * diffuseColor.g / max(0.02, ${b2s(palette.base || '#29262c')}));`)
@@ -195,7 +198,7 @@ if (!clothOuter) roughnessFactor = 0.8;`)
           .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
 if (!clothOuter) metalnessFactor = 0.0;`);
       };
-      mat.customProgramCacheKey = () => 'coat-v1-' + (liningFlip ? 1 : 0);
+      mat.customProgramCacheKey = () => 'coat-v3-' + (liningFlip ? 1 : 0);
     } else {
       mat = new THREE.MeshStandardMaterial({ map: capeTexture(palette || {}), roughness: 0.92, side: THREE.DoubleSide, envMapIntensity: 0.5, alphaTest: ragged ? 0.5 : 0 });
     }

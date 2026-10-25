@@ -279,7 +279,7 @@ export function buildRuins() {
   const group = new THREE.Group();
   const bands = [
     { z: -140, x0: -180, x1: 340, y0: -10, h: 66, W: 4096, color: '#574a52', rim: '#dcae94', haze: '#bba5a3', hz: 0.6, seed: 11, gap: 1.5, scale: 1.2 },
-    { z: -76, x0: -110, x1: 250, y0: -17, h: 60, W: 4096, color: '#3a3038', rim: '#cc9679', haze: '#a99291', hz: 0.45, seed: 23, gap: 1.3, scale: 0.95 },
+    { z: -76, x0: -110, x1: 250, y0: -17, h: 60, W: 4096, color: '#4a3f46', rim: '#cc9679', haze: '#a99291', hz: 0.55, seed: 23, gap: 1.3, scale: 0.95 },
   ];
   for (const B of bands) {
     const ppm = B.W / (B.x1 - B.x0);
@@ -310,10 +310,16 @@ export function buildRuins() {
       for (let x = x0; x <= x1; x += M(0.6)) g.lineTo(x, y + (rnd() - 0.3) * amp * (1 + Math.sin(x * 0.05) * 0.5));
       g.lineTo(x1, y + amp * 3); g.closePath(); g.fill();
     };
+    // cada ruina a su propia distancia dentro de la banda: unas más veladas que otras
+    const colHaze = new Float32Array(B.W);
+    let s2 = B.seed * 7919 + 13;
+    const rnd2 = () => { s2 = (s2 * 16807) % 2147483647; return (s2 - 1) / 2147483646; };
+    const depthAt = (x0, x1) => { const v = 0.04 + rnd2() * 0.24; for (let k = Math.max(0, x0 | 0); k < Math.min(B.W, x1 | 0); k++) colHaze[k] = v; };
     let x = M(4);
     while (x < B.W - M(12)) {
       const base = ground(x) + M(1.5);
       const kind = rnd();
+      const x0s = x - M(2);
       if (kind < 0.38) {
         // torre: contrafuertes en las esquinas, ventanas en lanceta en dos o tres pisos y remate
         const w = M(4 + rnd() * 3.5), h = M(16 + rnd() * 20);
@@ -370,21 +376,42 @@ export function buildRuins() {
         if (rnd() < 0.5) hole(() => { g.beginPath(); g.moveTo(x + w * 0.7, base - h - w * 0.6); g.lineTo(x + w + M(1), base - h - w * 0.2); g.lineTo(x + w + M(1), base - h * 0.7); g.lineTo(x + w * 0.82, base - h * 0.95); g.closePath(); g.fill(); });
         x += w + M(4 + rnd() * 12) * B.gap;
       }
+      depthAt(x0s, x);
     }
-    // color: silueta a contraluz, filo encendido a la derecha y arriba, neblina hacia la base
+    // color: silueta a contraluz con la luz rasante del sol en los cantos de la derecha y de arriba,
+    // neblina hacia la base y entre ruinas. Antes el canto era una línea de 2 px casi naranja en todo
+    // el contorno y el borde se binarizaba: se leían como recortes de cartón. Ahora la luz se difumina
+    // unos decímetros hacia dentro, varía con la piedra, y el borde conserva el suavizado del dibujo.
     const img = g.getImageData(0, 0, B.W, H), d = img.data;
     const a = new Uint8Array(B.W * H);
     for (let i = 0; i < a.length; i++) a[i] = d[i * 4 + 3] > 127 ? 1 : 0;
     const cb = new THREE.Color(B.color), cr = new THREE.Color(B.rim), ch = new THREE.Color(B.haze), cc = new THREE.Color();
-    for (let y = 0; y < H; y++) for (let xx = 0; xx < B.W; xx++) {
-      const i = y * B.W + xx;
-      if (!a[i]) { d[i * 4 + 3] = 0; continue; }
-      const right = xx + 2 < B.W && !a[i + 2], up = y > 1 && !a[i - 2 * B.W];
-      const rim = right ? 0.85 : up ? 0.4 : 0;
-      cc.copy(cb).multiplyScalar(0.93 + Math.random() * 0.1 - ((y % Math.round(M(0.7))) === 0 ? 0.05 : 0));
+    const K = Math.max(3, Math.round(M(0.5)));
+    const course = Math.max(2, Math.round(M(0.7)));
+    // volumen: cada masa se aclara hacia su canto derecho (lado del sol) y se oscurece hacia el
+    // izquierdo, en un metro y medio; así contrafuertes y torres se leen con cuerpo y no planos
+    const D = M(1.5);
+    const dl = new Float32Array(B.W), dr = new Float32Array(B.W);
+    for (let y = 0; y < H; y++) {
+      const row = y * B.W;
+      for (let xx = 0, run = 0; xx < B.W; xx++) { run = a[row + xx] ? run + 1 : 0; dl[xx] = run; }
+      for (let xx = B.W - 1, run = 0; xx >= 0; xx--) { run = a[row + xx] ? run + 1 : 0; dr[xx] = run; }
+      for (let xx = 0; xx < B.W; xx++) {
+      const i = row + xx;
+      const al = d[i * 4 + 3];
+      if (al === 0) continue;
+      const vol = 1 + 0.16 * Math.exp(-dr[xx] / D) - 0.14 * Math.exp(-dl[xx] / D);
+      // distancia (en px, hasta K) al aire por la derecha y por arriba
+      let kr = K, ku = K;
+      for (let k = 1; k <= K; k++) if (xx + k >= B.W || !a[i + k]) { kr = k - 1; break; }
+      for (let k = 1; k <= K; k++) if (y - k < 0 || !a[i - k * B.W]) { ku = k - 1; break; }
+      const grain = 0.5 + 0.5 * Math.sin(xx * 0.31 + y * 0.17) * Math.sin(y * 0.093 - xx * 0.021);
+      const rim = Math.max(0.3 * Math.pow(1 - kr / K, 1.6), 0.16 * Math.pow(1 - ku / K, 1.6)) * (0.7 + 0.3 * grain);
+      cc.copy(cb).multiplyScalar(vol * (0.94 + Math.random() * 0.06 + grain * 0.05 - ((y % course) === 0 ? 0.04 : 0)));
       cc.lerp(cr, rim);
-      cc.lerp(ch, B.hz * Math.pow(y / H, 1.6) + B.hz * 0.25);
-      d[i * 4] = cc.r * 255; d[i * 4 + 1] = cc.g * 255; d[i * 4 + 2] = cc.b * 255; d[i * 4 + 3] = 255;
+      cc.lerp(ch, Math.min(0.9, B.hz * Math.pow(y / H, 1.6) + B.hz * 0.25 + colHaze[xx]));
+      d[i * 4] = cc.r * 255; d[i * 4 + 1] = cc.g * 255; d[i * 4 + 2] = cc.b * 255; d[i * 4 + 3] = al;
+      }
     }
     g.putImageData(img, 0, 0);
     const tex = new THREE.CanvasTexture(c);
@@ -392,7 +419,8 @@ export function buildRuins() {
     tex.anisotropy = 4;
     const geo = new THREE.PlaneGeometry(B.x1 - B.x0, B.h);
     geo.translate((B.x0 + B.x1) / 2, B.y0 + B.h / 2, B.z);
-    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, alphaTest: 0.5, fog: false }));
+    // alfa a cobertura: el borde suavizado del dibujo se conserva con el MSAA
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, alphaTest: 0.5, alphaToCoverage: true, fog: false }));
     m.renderOrder = -4;
     m.userData.noAO = true;
     group.add(m);

@@ -161,8 +161,10 @@ export function buildLevel01(game, tex) {
       kit.box(x - 1.1, -4, x + 1.1, 7, Z - 1.1, Z + 1.1, mats.stone, { radius: 0.1, cast: false });
       if (x < 190) {
         kit.arch(x + 6, -12, 8.8, Z, 2.6, 1.0, mats.stone, { voussoirs: 11, cast: false });
+        kit.spandrel(x + 6, -12, 4.4 + 0.5, x + 1.6, x + 10.4, -6.2, Z, 2.2, mats.stone, { cast: false });
         kit.box(x + 1.6, -6.2, x + 10.4, -4, Z - 1.4, Z + 1.4, mats.stone, { radius: 0.1, cast: false });
         kit.arch(x + 6, 2.2, 9.6, Z, 1.8, 0.7, mats.stone, { voussoirs: 11, cast: false });
+        kit.spandrel(x + 6, 2.2, 4.8 + 0.35, x + 1.1, x + 10.9, 7, Z, 1.4, mats.stone, { cast: false });
       }
     }
     kit.box(-68, 7, 192, 8.6, Z - 1.4, Z + 1.4, mats.stone, { radius: 0.1, cast: false }); // canal superior
@@ -395,7 +397,10 @@ export function buildLevel01(game, tex) {
     // muro del canal al fondo con arcos y caños
     for (let x = 47; x < 87; x += 6.5) {
       kit.pier(x, -3, 5.4, -9.2, 1.2, 1.2, mats.stoneWet);
-      if (x + 6.5 < 88) kit.arch(x + 3.25, 2.2, 5.3, -9.2, 1.1, 0.5, mats.stoneWet, { voussoirs: 11 });
+      if (x + 6.5 < 88) {
+        kit.arch(x + 3.25, 2.2, 5.3, -9.2, 1.1, 0.5, mats.stoneWet, { voussoirs: 11 });
+        kit.spandrel(x + 3.25, 2.2, 2.65 + 0.25, x + 0.6, x + 5.9, 5.4, -9.2, 0.9, mats.stoneWet);
+      }
     }
     kit.box(46.4, -3, 87.6, 0.3, -9.8, -8.6, mats.stoneWet, { radius: 0.05 });
     kit.box(46.4, 5.4, 87.6, 6.4, -9.9, -8.5, mats.stone, { radius: 0.05 });
