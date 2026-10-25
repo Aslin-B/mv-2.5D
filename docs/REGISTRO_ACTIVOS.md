@@ -22,7 +22,11 @@ propia. Estado: aprobado para el prototipo. No hay archivos binarios de terceros
 | Piedra sillar, losas, madera, roca, hiedra, hierba, estandartes | Texturas | `src/render/textures.js` | Generadas en lienzo al cargar |
 | Arquitectura del acueducto | Geometría | `src/render/architecture.js`, `src/world/level01.js` | Kit modular paramétrico |
 | Agua del canal y cascadas | Sombreadores | `src/render/water.js` | |
-| Cielo, cordilleras, sol | Sombreadores y geometría | `src/render/environment.js` | |
+| Cielo, cordilleras, sol | Sombreadores y geometría | `src/render/environment.js` | Roca pintada de las cordilleras (facetas de Voronoi en lienzo) desde la iteración 13 |
+| Ruinas góticas del fondo | Geometría y textura | `src/render/environment.js` | Siluetas pintadas por código en la bruma |
+| Engranajes, planos del maestro, polipasto y cuerdas | Geometría y texturas | `src/world/machinery.js` | Ruedas dentadas extruidas que engranan; planos en pergamino con escritura inventada |
+| Follaje con relieve | Textura | `src/render/textures.js` | Masas de hojas con mapa de normales generado |
+| Macetones, bandadas de pájaros, rueda de primer plano | Geometría | `src/world/level01.js` | Primitivas paramétricas |
 | Partículas, estela de espada | Efectos | `src/render/particles.js`, `trail.js` | |
 | Efectos de sonido, ambiente y motivo musical | Audio sintetizado | `src/audio/audio.js` | Osciladores y ruido filtrado en WebAudio |
 | Iconos de la interfaz (vasos de vida, clavija) | SVG en línea | `src/ui/hud.js` | |

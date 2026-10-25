@@ -7,6 +7,12 @@
 > lámina de referencia **no** se guarda en el repositorio: solo sus cifras, en
 > [`tests/judge/referencia_mago.json`](../tests/judge/referencia_mago.json). Las comparaciones lado a
 > lado se guardan fuera del repositorio.
+>
+> Estado tras la iteración 15: **5,0 / 10** frente a la lámina (era 4,7 en la iteración 11). Las
+> iteraciones 12–15 también miden el escenario (mediana de `detail` por sala 4,0 → 4,4, objetivo 5–12),
+> la tela en movimiento y el uso de herramientas. Ver
+> [`juez/iteracion-7.md`](juez/iteracion-7.md) (rondas 7–11) y
+> [`juez/iteracion-12.md`](juez/iteracion-12.md) (rondas 12–15).
 
 ## v3 · Evidencias
 
