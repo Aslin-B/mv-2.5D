@@ -204,3 +204,133 @@ export function buildMistBand({ x0, x1, y0, y1, z, color = '#c9b2a6', alpha = 0.
   mesh.userData.noAO = true;
   return { mesh, mat };
 }
+
+// Ruinas góticas en la bruma (pintura mate procedural, como el fondo de la lámina del mago): torres
+// con agujas y almenas, muros quebrados con arcadas apuntadas, hastiales con ventanal y rosetón. Son
+// siluetas a contraluz con el filo encendido por el sol (que queda detrás, a la derecha) y la base
+// fundida en la neblina del valle. Dos bandas a distinta distancia dan paralaje; los vanos dejan ver
+// el cielo, que es lo que da lectura de detalle a distancia.
+export function buildRuins() {
+  const group = new THREE.Group();
+  const bands = [
+    { z: -140, x0: -180, x1: 340, y0: -10, h: 66, W: 4096, color: '#574a52', rim: '#dcae94', haze: '#bba5a3', hz: 0.6, seed: 11, gap: 1.5, scale: 1.2 },
+    { z: -76, x0: -110, x1: 250, y0: -17, h: 60, W: 4096, color: '#3a3038', rim: '#cc9679', haze: '#a99291', hz: 0.45, seed: 23, gap: 1.3, scale: 0.95 },
+  ];
+  for (const B of bands) {
+    const ppm = B.W / (B.x1 - B.x0);
+    const H = Math.round(B.h * ppm);
+    const c = document.createElement('canvas'); c.width = B.W; c.height = H;
+    const g = c.getContext('2d');
+    let s = B.seed;
+    const rnd = () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
+    const M = (m) => m * ppm * (B.scale || 1);
+    // colinas sobre las que se asientan las ruinas
+    const ground = (x) => H - M(9 + 5 * Math.sin(x / M(37) + B.seed) + 3 * Math.sin(x / M(13) + B.seed * 2));
+    g.fillStyle = '#fff';
+    g.beginPath(); g.moveTo(0, H);
+    for (let x = 0; x <= B.W; x += 8) g.lineTo(x, ground(x));
+    g.lineTo(B.W, H); g.closePath(); g.fill();
+    const lancet = (cx, yb, w, h) => {
+      const ys = yb - h + w * 0.9;
+      g.beginPath();
+      g.moveTo(cx - w / 2, yb); g.lineTo(cx - w / 2, ys);
+      g.quadraticCurveTo(cx - w / 2, yb - h + w * 0.15, cx, yb - h);
+      g.quadraticCurveTo(cx + w / 2, yb - h + w * 0.15, cx + w / 2, ys);
+      g.lineTo(cx + w / 2, yb); g.closePath(); g.fill();
+    };
+    const hole = (fn) => { g.globalCompositeOperation = 'destination-out'; fn(); g.globalCompositeOperation = 'source-over'; };
+    const jagged = (x0, x1, y, amp) => {
+      // borde superior roto de la mampostería
+      g.beginPath(); g.moveTo(x0, y + amp * 3);
+      for (let x = x0; x <= x1; x += M(0.6)) g.lineTo(x, y + (rnd() - 0.3) * amp * (1 + Math.sin(x * 0.05) * 0.5));
+      g.lineTo(x1, y + amp * 3); g.closePath(); g.fill();
+    };
+    let x = M(4);
+    while (x < B.W - M(12)) {
+      const base = ground(x) + M(1.5);
+      const kind = rnd();
+      if (kind < 0.38) {
+        // torre: contrafuertes en las esquinas, ventanas en lanceta en dos o tres pisos y remate
+        const w = M(4 + rnd() * 3.5), h = M(16 + rnd() * 20);
+        g.fillRect(x, base - h, w, h);
+        g.fillRect(x - M(0.7), base - h * 0.55, M(0.9), h * 0.55);
+        g.fillRect(x + w - M(0.2), base - h * 0.45, M(0.9), h * 0.45);
+        const top = rnd();
+        if (top < 0.4) {
+          // aguja con pináculos
+          g.beginPath(); g.moveTo(x - M(0.3), base - h); g.lineTo(x + w / 2, base - h - w * (1.6 + rnd())); g.lineTo(x + w + M(0.3), base - h); g.closePath(); g.fill();
+          for (const px of [x - M(0.2), x + w - M(0.4)]) { g.beginPath(); g.moveTo(px, base - h); g.lineTo(px + M(0.3), base - h - M(2.4)); g.lineTo(px + M(0.6), base - h); g.fill(); }
+        } else if (top < 0.75) {
+          // almenas
+          for (let mx = x - M(0.3); mx < x + w; mx += M(1.1)) g.fillRect(mx, base - h - M(1.2), M(0.6), M(1.2));
+          g.fillRect(x - M(0.4), base - h - M(0.2), w + M(0.8), M(0.5));
+        } else jagged(x, x + w, base - h, M(1.2));
+        hole(() => {
+          const floors = 2 + Math.floor(rnd() * 2);
+          for (let f = 0; f < floors; f++) {
+            const yb = base - h * (0.25 + f * 0.27);
+            const n = w > M(6) ? 2 : 1;
+            for (let k = 0; k < n; k++) lancet(x + w * (k + 0.5) / n, yb, M(0.9 + rnd() * 0.5), M(2.6 + rnd() * 1.6));
+          }
+        });
+        x += w + M(3 + rnd() * 10) * B.gap;
+      } else if (kind < 0.72) {
+        // muro con arcada apuntada y contrafuertes, coronación quebrada
+        const L = M(10 + rnd() * 18), h = M(7 + rnd() * 8);
+        g.fillRect(x, base - h * 0.7, L, h * 0.7);
+        jagged(x, x + L, base - h * (0.7 + rnd() * 0.3), M(1.6));
+        for (let bx = x; bx < x + L; bx += M(4)) {
+          g.beginPath(); g.moveTo(bx, base); g.lineTo(bx, base - h * 0.75); g.lineTo(bx + M(0.9), base - h * 0.62); g.lineTo(bx + M(1.4), base); g.fill();
+        }
+        hole(() => { for (let ax = x + M(2.4); ax < x + L - M(1.6); ax += M(4)) lancet(ax, base - M(0.6), M(2.2), h * 0.55); });
+        x += L + M(2 + rnd() * 8) * B.gap;
+      } else {
+        // hastial de una nave: piñón, gran ventanal apuntado con parteluz y rosetón calado
+        const w = M(10 + rnd() * 5), h = M(14 + rnd() * 10);
+        g.fillRect(x, base - h, w, h);
+        g.beginPath(); g.moveTo(x - M(0.4), base - h); g.lineTo(x + w / 2, base - h - w * 0.55); g.lineTo(x + w + M(0.4), base - h); g.closePath(); g.fill();
+        g.fillRect(x - M(1.2), base - h * 0.8, M(1.4), h * 0.8);
+        g.fillRect(x + w - M(0.2), base - h * 0.8, M(1.4), h * 0.8);
+        const rr = w * 0.17, ry = base - h - w * 0.12;
+        hole(() => {
+          lancet(x + w / 2, base - M(1), w * 0.36, h * 0.62);
+          g.beginPath(); g.arc(x + w / 2, ry, rr, 0, Math.PI * 2); g.fill();
+        });
+        // parteluz y tracería del rosetón
+        g.fillRect(x + w / 2 - M(0.18), base - M(1) - h * 0.5, M(0.36), h * 0.5);
+        g.lineWidth = M(0.28); g.strokeStyle = '#fff';
+        for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; g.beginPath(); g.moveTo(x + w / 2, ry); g.lineTo(x + w / 2 + Math.cos(a) * rr, ry + Math.sin(a) * rr); g.stroke(); }
+        g.beginPath(); g.arc(x + w / 2, ry, rr * 0.35, 0, Math.PI * 2); g.stroke();
+        // derrumbe: una esquina del piñón se ha caído
+        if (rnd() < 0.5) hole(() => { g.beginPath(); g.moveTo(x + w * 0.7, base - h - w * 0.6); g.lineTo(x + w + M(1), base - h - w * 0.2); g.lineTo(x + w + M(1), base - h * 0.7); g.lineTo(x + w * 0.82, base - h * 0.95); g.closePath(); g.fill(); });
+        x += w + M(4 + rnd() * 12) * B.gap;
+      }
+    }
+    // color: silueta a contraluz, filo encendido a la derecha y arriba, neblina hacia la base
+    const img = g.getImageData(0, 0, B.W, H), d = img.data;
+    const a = new Uint8Array(B.W * H);
+    for (let i = 0; i < a.length; i++) a[i] = d[i * 4 + 3] > 127 ? 1 : 0;
+    const cb = new THREE.Color(B.color), cr = new THREE.Color(B.rim), ch = new THREE.Color(B.haze), cc = new THREE.Color();
+    for (let y = 0; y < H; y++) for (let xx = 0; xx < B.W; xx++) {
+      const i = y * B.W + xx;
+      if (!a[i]) { d[i * 4 + 3] = 0; continue; }
+      const right = xx + 2 < B.W && !a[i + 2], up = y > 1 && !a[i - 2 * B.W];
+      const rim = right ? 0.85 : up ? 0.4 : 0;
+      cc.copy(cb).multiplyScalar(0.93 + Math.random() * 0.1 - ((y % Math.round(M(0.7))) === 0 ? 0.05 : 0));
+      cc.lerp(cr, rim);
+      cc.lerp(ch, B.hz * Math.pow(y / H, 1.6) + B.hz * 0.25);
+      d[i * 4] = cc.r * 255; d[i * 4 + 1] = cc.g * 255; d[i * 4 + 2] = cc.b * 255; d[i * 4 + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    const geo = new THREE.PlaneGeometry(B.x1 - B.x0, B.h);
+    geo.translate((B.x0 + B.x1) / 2, B.y0 + B.h / 2, B.z);
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, alphaTest: 0.5, fog: false }));
+    m.renderOrder = -4;
+    m.userData.noAO = true;
+    group.add(m);
+  }
+  return group;
+}

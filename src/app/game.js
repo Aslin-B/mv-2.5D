@@ -18,7 +18,7 @@ import { Cape } from '../render/cloth.js';
 import { CHAR_EDGE } from '../render/charMaterial.js';
 import { SwordTrail } from '../render/trail.js';
 import { Particles, Debris } from '../render/particles.js';
-import { buildSky, buildMountains, buildLights, updateSun } from '../render/environment.js';
+import { buildSky, buildMountains, buildRuins, buildLights, updateSun } from '../render/environment.js';
 import { softDot, shaftTexture, waterNormals } from '../render/textures.js';
 import { GameCamera, sampleCameraZone } from '../render/camera.js';
 import { PostFX, QUALITY } from '../render/post.js';
@@ -116,6 +116,7 @@ export class Game {
     this.sky = buildSky();
     scene.add(this.sky);
     scene.add(buildMountains());
+    scene.add(buildRuins());
     // Entorno de reflejos a partir del propio cielo (PMREM)
     {
       const pm = new THREE.PMREMGenerator(renderer);
