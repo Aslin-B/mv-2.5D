@@ -267,3 +267,96 @@ export function skyGradient(w = 1024, hh = 512) {
   t.mapping = THREE.EquirectangularReflectionMapping;
   return t;
 }
+
+// Roca natural de acantilado: estratos inclinados, grietas Voronoi y líquenes.
+export function rockFace(size = 512, seed = 21) {
+  const h = new Float32Array(size * size);
+  const col = new Uint8ClampedArray(size * size * 4);
+  const rough = new Uint8ClampedArray(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = x / size, v = y / size;
+      const n = fbm2(u * 5, v * 5, 6, 5, seed);
+      const n2 = fbm2(u * 22, v * 22, 3, 22, seed + 5);
+      // estratos inclinados y deformados
+      const sv = v + (n - 0.5) * 0.35 + u * 0.12;
+      const strata = Math.abs(Math.sin(sv * Math.PI * 9));
+      const ledge = Math.pow(strata, 6);
+      const vr = voronoi2(u * 3, v * 6, 3, seed + 3, 0.95);
+      const crack = Math.min(1, (vr.f2 - vr.f1) / 0.025);
+      h[y * size + x] = n * 0.55 + n2 * 0.2 + (1 - ledge) * 0.2 - (1 - crack) * 0.12;
+      const tone = 0.82 + (n - 0.5) * 0.45 + (n2 - 0.5) * 0.12 + vr.id * 0.08;
+      const lic = fbm2(u * 9 + 3, v * 9, 3, 9, seed + 9) > 0.64 ? 0.45 : 0;
+      let r = 0.45 * tone, g = 0.4 * tone, b = 0.35 * tone;
+      r = r * (1 - lic) + 0.46 * lic; g = g * (1 - lic) + 0.45 * lic; b = b * (1 - lic) + 0.33 * lic;
+      const dark = 1 - (1 - crack) * 0.35 - ledge * 0.15;
+      const i = (y * size + x) * 4;
+      col[i] = srgbToByte(r * dark); col[i + 1] = srgbToByte(g * dark); col[i + 2] = srgbToByte(b * dark); col[i + 3] = 255;
+      rough[i] = rough[i + 1] = rough[i + 2] = srgbToByte(0.84 + (n2 - 0.5) * 0.2); rough[i + 3] = 255;
+    }
+  }
+  return {
+    map: toTexture(col, size, true),
+    normalMap: toTexture(heightToNormal(h, size, 3.0), size, false),
+    roughnessMap: toTexture(rough, size, false),
+  };
+}
+
+// Estandarte de tela con el motivo propio de las compuertas (ondas y rueda), canal alfa en el borde.
+export function bannerTexture(w = 256, hh = 640, base = '#2f4b4c') {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = hh;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, w, hh);
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  for (let y = 0; y < hh; y += 3) ctx.fillRect(0, y, w, 1);
+  ctx.strokeStyle = '#a88a57'; ctx.lineWidth = 6;
+  ctx.strokeRect(14, 14, w - 28, hh - 120);
+  // rueda de compuerta estilizada
+  ctx.lineWidth = 7;
+  ctx.beginPath(); ctx.arc(w / 2, 200, 70, 0, Math.PI * 2); ctx.stroke();
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    ctx.beginPath(); ctx.moveTo(w / 2, 200); ctx.lineTo(w / 2 + Math.cos(a) * 70, 200 + Math.sin(a) * 70); ctx.stroke();
+  }
+  ctx.lineWidth = 5;
+  for (let k = 0; k < 3; k++) {
+    ctx.beginPath();
+    for (let x = 30; x <= w - 30; x += 4) ctx.lineTo(x, 330 + k * 34 + Math.sin(x / 14 + k) * 8);
+    ctx.stroke();
+  }
+  // bajo dentado y raído
+  ctx.globalCompositeOperation = 'destination-out';
+  for (let x = 0; x < w; x += 2) {
+    const tri = Math.abs(((x / w) * 4) % 1 - 0.5) * 2;
+    ctx.fillRect(x, hh - 100 + tri * 90 + Math.random() * 6, 2, 120);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
+// Mechón de hierba (tarjeta con alfa).
+export function grassCard(size = 256, seed = 13) {
+  const c = makeCanvas(size);
+  const ctx = c.getContext('2d');
+  let rnd = seed;
+  const R = () => { rnd = (rnd * 16807) % 2147483647; return rnd / 2147483647; };
+  for (let i = 0; i < 70; i++) {
+    const x = size * (0.1 + R() * 0.8);
+    const hgt = size * (0.35 + R() * 0.6);
+    const lean = (R() - 0.5) * size * 0.25;
+    const g = 70 + R() * 50;
+    ctx.strokeStyle = `rgba(${60 + R() * 40},${g},${30 + R() * 20},1)`;
+    ctx.lineWidth = 2 + R() * 2;
+    ctx.beginPath(); ctx.moveTo(x, size);
+    ctx.quadraticCurveTo(x + lean * 0.3, size - hgt * 0.6, x + lean, size - hgt);
+    ctx.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}

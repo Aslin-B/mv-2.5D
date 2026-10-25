@@ -5,7 +5,7 @@ import { smoothstep, lerp } from '../core/math.js';
 // Atmósfera de amanecer: cielo procedural, montañas en capas con perspectiva aérea, sol direccional
 // con sombras, luz hemisférica y niebla exponencial. Las "zonas" ajustan la luz en interiores.
 
-export const SUN_DIR = new THREE.Vector3(0.62, 0.42, -0.66).normalize(); // hacia el sol (detrás, a la derecha)
+export const SUN_DIR = new THREE.Vector3(0.44, 0.3, -0.85).normalize(); // hacia el sol: bajo, detrás y a la derecha (contraluz de amanecer)
 
 export function buildSky() {
   const mat = new THREE.ShaderMaterial({
@@ -30,8 +30,8 @@ export function buildSky() {
         col = mix(col, zenith, smoothstep(0.2, 0.75, y));
         float sd = max(dot(d, sunDir), 0.0);
         // halo cálido alrededor del sol, más fuerte cerca del horizonte
-        col += vec3(1.6, 0.85, 0.42) * pow(sd, 8.0) * 0.9;
-        col += vec3(1.0, 0.6, 0.35) * pow(sd, 2.5) * 0.35 * (1.0 - smoothstep(0.0, 0.5, y));
+        col += vec3(1.6, 0.85, 0.42) * pow(sd, 10.0) * 0.55;
+        col += vec3(1.0, 0.6, 0.35) * pow(sd, 3.0) * 0.22 * (1.0 - smoothstep(0.0, 0.5, y));
         col += vec3(28.0, 20.0, 12.0) * smoothstep(0.9993, 0.99965, sd);
         // nubes estratificadas iluminadas desde abajo
         vec2 uv = d.xz / max(y + 0.12, 0.05) * 1.4 + vec2(time * 0.004, 0.0);
@@ -54,20 +54,21 @@ export function buildSky() {
 export function buildMountains() {
   const group = new THREE.Group();
   const layers = [
-    { z: -420, base: -30, amp: 120, freq: 0.004, color: '#9c8f9e', top: '#e2b9a2', seed: 1 },
-    { z: -260, base: -30, amp: 70, freq: 0.008, color: '#77708a', top: '#c79a88', seed: 2 },
-    { z: -150, base: -30, amp: 42, freq: 0.014, color: '#4e5262', top: '#9c7e74', seed: 3 },
-    { z: -90, base: -25, amp: 22, freq: 0.03, color: '#373d45', top: '#6d5c55', seed: 4 },
+    { z: -420, base: -30, amp: 120, freq: 0.004, color: '#b7aab2', top: '#ecc6ae', seed: 1 },
+    { z: -260, base: -30, amp: 70, freq: 0.008, color: '#9d93a0', top: '#dbb19c', seed: 2 },
+    { z: -150, base: -30, amp: 42, freq: 0.014, color: '#7f7886', top: '#c09584', seed: 3 },
+    { z: -90, base: -25, amp: 22, freq: 0.03, color: '#635f69', top: '#9a7a6c', seed: 4 },
   ];
   for (const L of layers) {
     const pos = [], col = [], idx = [];
-    const x0 = -500, x1 = 700, n = 260;
+    const x0 = -500, x1 = 700, n = 900;
     const ct = new THREE.Color(L.top), cb = new THREE.Color(L.color), haze = new THREE.Color('#b8a2a0');
     for (let i = 0; i <= n; i++) {
       const x = x0 + ((x1 - x0) * i) / n;
-      const r = fbm2(x * L.freq, L.seed * 10, 5, 1e6, L.seed);
+      const r = fbm2(x * L.freq, L.seed * 10, 6, 1e6, L.seed);
       const ridge = 1 - Math.abs(r * 2 - 1);
-      const y = L.base + 12 + L.amp * (0.25 + 0.75 * Math.pow(ridge, 1.6));
+      const detail = (fbm2(x * L.freq * 9, L.seed * 3, 3, 1e6, L.seed + 7) - 0.5) * 0.12;
+      const y = L.base + 12 + L.amp * (0.25 + 0.75 * Math.pow(ridge, 1.6) + detail);
       pos.push(x, y, L.z, x, L.base, L.z);
       const lit = 0.55 + 0.45 * Math.max(0, fbm2(x * L.freq * 3, 2, 3, 1e6, L.seed + 5));
       const top = cb.clone().lerp(ct, lit * 0.6);
@@ -100,7 +101,7 @@ export function buildLights(scene, quality) {
   scene.add(sun);
   scene.add(sun.target);
   // Relleno suave cercano al personaje (rebote cálido), sin sombras.
-  const fill = new THREE.PointLight('#ffd2a8', 2.2, 9, 2);
+  const fill = new THREE.PointLight('#ffd2a8', 3.0, 10, 2);
   scene.add(fill);
   return { hemi, sun, fill };
 }

@@ -6,11 +6,11 @@ import * as THREE from 'three';
 
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _p = new THREE.Vector3();
 
-function capeTexture() {
+function capeTexture({ base = '#365456', hem = '#3d2c1f', line = '#9a7a4e', ragged = false } = {}) {
   const c = document.createElement('canvas');
   c.width = 256; c.height = 512;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#365456';
+  ctx.fillStyle = base;
   ctx.fillRect(0, 0, 256, 512);
   const img = ctx.getImageData(0, 0, 256, 512);
   for (let y = 0; y < 512; y++) for (let x = 0; x < 256; x++) {
@@ -21,9 +21,21 @@ function capeTexture() {
   }
   ctx.putImageData(img, 0, 0);
   // ribete de cuero y línea de ondas bordada (motivo propio del agua)
-  ctx.fillStyle = '#3d2c1f';
+  ctx.fillStyle = hem;
   ctx.fillRect(0, 0, 256, 18);
-  ctx.strokeStyle = '#9a7a4e';
+  if (ragged) {
+    // borde deshilachado y remiendos (lona del saqueador)
+    ctx.globalCompositeOperation = 'destination-out';
+    for (let x = 0; x < 256; x += 6) ctx.fillRect(x, 470 + Math.random() * 30, 4 + Math.random() * 4, 60);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = 'rgba(84,92,74,0.85)';
+    ctx.fillRect(40, 180, 60, 70);
+    ctx.fillRect(150, 320, 50, 56);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }
+  ctx.strokeStyle = line;
   ctx.lineWidth = 3;
   ctx.beginPath();
   for (let x = 0; x <= 256; x += 4) ctx.lineTo(x, 470 + Math.sin(x / 12) * 6);
@@ -38,11 +50,12 @@ function capeTexture() {
 }
 
 export class Cape {
-  constructor(model, scene, { cols = 5, rows = 10, length = 0.74 } = {}) {
+  constructor(model, scene, { cols = 5, rows = 10, length = 0.74, palette = null } = {}) {
     this.model = model;
     this.cols = cols; this.rows = rows; this.length = length;
     this.panels = [];
-    const mat = new THREE.MeshStandardMaterial({ map: capeTexture(), roughness: 0.92, side: THREE.DoubleSide, envMapIntensity: 0.5 });
+    const ragged = palette && palette.ragged;
+    const mat = new THREE.MeshStandardMaterial({ map: capeTexture(palette || {}), roughness: 0.92, side: THREE.DoubleSide, envMapIntensity: 0.5, alphaTest: ragged ? 0.5 : 0 });
     this.material = mat;
     for (const side of ['L', 'R']) {
       const n = cols * rows;
@@ -99,6 +112,7 @@ export class Cape {
   reset() { for (const p of this.panels) p.init = false; }
 
   step(dt, windX = 0) {
+    this.clock = (this.clock || 0) + dt;
     this.updateColliders();
     const segV = this.length / (this.rows - 1);
     const g = -9.8 * dt * dt;
@@ -116,7 +130,7 @@ export class Cape {
         P.init = true;
       }
       // Integración
-      const t = performance.now() * 0.001;
+      const t = this.clock;
       for (let r = 1; r < R; r++) for (let c = 0; c < C; c++) {
         const i = r * C + c;
         const p = pos[i];

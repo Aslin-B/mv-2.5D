@@ -36,7 +36,7 @@ export class Animator {
     this.root = model.root;
     this.opts = {
       yawSide: 1.36, turnTime: 0.16, legLen: 0.845, ankleH: 0.085, footFwd: 0.055, stanceW: 0.095,
-      cadence: 1.55, hasSword: true, twoHandOffset: 0.1, ...opts,
+      cadence: 1.55, hasSword: true, twoHandOffset: 0.1, restRel: { L: -0.11, R: 0.13 }, ...opts,
     };
     this.POSE = opts.poses ? { ...POSE, ...opts.poses } : POSE;
     this.CARRY = opts.carry ? { ...CARRY, ...opts.carry } : CARRY;
@@ -370,12 +370,15 @@ export class Animator {
       this.gait = false;
     }
     const running = speed > 0.9 && !s.skid;
+    // Marcha hacia atrás (retirada de cara al rival): los pies se colocan según el movimiento.
+    const mdir = speed > 0.3 ? Math.sign(s.vx) : dir;
+    const back = mdir !== dir;
     if (running) {
       const cyc = this.cycleLen(speed);
       const fr = this.stanceFrac(speed);
       if (!this.gait) {
         // Empezar la marcha con el pie que queda atrás.
-        const relL = (feet.L.pos.x - s.x) * dir, relR = (feet.R.pos.x - s.x) * dir;
+        const relL = (feet.L.pos.x - s.x) * mdir, relR = (feet.R.pos.x - s.x) * mdir;
         this.phase = relL < relR ? fr : (fr + 0.5) % 1;
         this.gait = true;
       }
@@ -389,24 +392,24 @@ export class Animator {
         if (u < fr) {
           if (!f.planted) {
             f.planted = true;
-            f.pos.set(s.x + dir * (L / 2), gy, lat.z);
+            f.pos.set(s.x + mdir * (L / 2), gy, lat.z);
             this.events.push({ type: 'step', side: k, speed });
           }
           f.pos.y = gy;
           const st = u / fr;
-          f.pitch = smoothstep(0.55, 1, st) * 34;
+          f.pitch = smoothstep(0.55, 1, st) * (back ? -12 : 34);
           f.target = _v3.copy(f.pos);
         } else {
           const st = (u - fr) / (1 - fr);
-          if (f.planted) { f.planted = false; f.liftRel = (f.pos.x - s.x) * dir; }
+          if (f.planted) { f.planted = false; f.liftRel = (f.pos.x - s.x) * mdir; }
           const hs = lerp(0.45, 1, sp);
           const xs = [f.liftRel, f.liftRel - 0.06 * hs, -0.12, L / 2 + 0.14 * hs, L / 2];
           const ys = [0, 0.22 * hs, 0.42 * hs, 0.17 * hs, 0];
           const rel = curve(xs, st);
           const h = Math.max(0, curve(ys, st));
-          f.target = _v3.set(s.x + dir * rel, gy + h, lat.z);
+          f.target = _v3.set(s.x + mdir * rel, gy + h, lat.z);
           f.pos.copy(f.target);
-          f.pitch = lerp(45, -18, smoothstep(0.1, 0.85, st)) * (1 - smoothstep(0.85, 1, st));
+          f.pitch = lerp(45, -18, smoothstep(0.1, 0.85, st)) * (1 - smoothstep(0.85, 1, st)) * (back ? -0.5 : 1);
         }
       }
     } else {
@@ -418,7 +421,7 @@ export class Animator {
         }
         this.gait = false;
       }
-      const restRel = { L: -0.11, R: 0.13 };
+      const restRel = o.restRel;
       const anySwing = feet.L.swing || feet.R.swing;
       for (const k of ['L', 'R']) {
         const f = feet[k];

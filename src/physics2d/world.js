@@ -1,6 +1,8 @@
 // Mundo físico 2D: rectángulos alineados a ejes en metros (X derecha, Y arriba).
 // La colisión es una superficie simplificada y predecible, separada de la malla visible (biblia §7.5).
 
+import { segAABB } from '../core/geom2d.js';
+
 const EPS = 1e-4;
 
 export class PhysicsWorld {
@@ -55,6 +57,15 @@ export class PhysicsWorld {
       }
     }
     return best;
+  }
+
+  // ¿Bloquea algún sólido la línea entre dos puntos? (línea de visión de enemigos)
+  segmentBlocked(ax, ay, bx, by) {
+    for (const s of this.solids) {
+      if (!s.enabled || s.kind !== 'solid' || s.seeThrough) continue;
+      if (segAABB(ax, ay, bx, by, s)) return s;
+    }
+    return null;
   }
 
   // Raycast horizontal/vertical simple contra sólidos (devuelve distancia o Infinity).

@@ -151,7 +151,10 @@ export class Hero {
     if (this.mode === 'slide') {
       b.h = T.hLow;
       const t = this.modeT / this.modeDur;
-      this.vx = this.facing * Math.max(T.slideSpeed * (1 - t * 0.75), 2.4);
+      // Bajo techo bajo se conserva el impulso (sin quedarse arrastrándose a paso lento).
+      const hw = b.w / 2;
+      const covered = !this.game.physics.isFree(b.x - hw, b.y, b.x + hw, b.y + T.h);
+      this.vx = this.facing * Math.max(T.slideSpeed * (1 - t * 0.75), covered ? 5.6 : 2.4);
       this.applyGravity(dt);
       this.integrate(dt);
       if (!this.grounded) { if (this.tryStand()) this.setMode('air'); }
@@ -216,7 +219,10 @@ export class Hero {
     this.integrate(dt);
 
     // ---- Agarre de bordes (§12.9) ----
-    if (!this.grounded && this.vy <= 2.5 && this.noGrab <= 0 && !this.attack && ctl) this.tryLedge(ax);
+    if (!this.grounded && this.vy <= 2.5 && this.noGrab <= 0 && !this.attack && ctl) {
+      this.tryLedge(ax);
+      if (this.mode === 'hang') return;
+    }
 
     this.mode = this.grounded ? 'ground' : 'air';
     if (!wasGrounded && this.grounded) this.onLand();
@@ -360,10 +366,12 @@ export class Hero {
       this.attack.t += dt;
       // empuje de avance en cortes pesados (pasa por colisiones)
       if (a.lunge && this.attack.t > a.active[0] - 0.08 && this.attack.t < a.active[0] + 0.06 && this.grounded) {
-        this.vx = this.facing * a.lunge / 0.14;
+        this.vx = this.facing * (this.attack.lunge ?? a.lunge) / 0.14;
       }
-      if (input.pressed('attack', T.attackBuffer) && this.attack.t >= a.comboFrom - T.attackBuffer) {
-        if (this.attack.t >= a.comboFrom) { input.consume('attack'); this.startAttack(this.nextCombo()); return; }
+      // tras una parada precisa la respuesta puede salir casi al instante (§14.5)
+      const comboFrom = this.attack.parried ? 0.05 : a.comboFrom;
+      if (input.pressed('attack', T.attackBuffer) && this.attack.t >= comboFrom - T.attackBuffer) {
+        if (this.attack.t >= comboFrom) { input.consume('attack'); this.startAttack(this.nextCombo()); return; }
       }
       if (this.attack.t >= a.duration) this.attack = null;
     }
@@ -394,7 +402,15 @@ export class Hero {
     const ax = this.game.input.axisX();
     if (ax !== 0 && id !== 'airCut') this.facing = ax;
     this.attack = { id, t: 0, hits: new Set() };
-    if (id === 'riposte') this.riposteWindow = 0;
+    if (id === 'riposte') {
+      this.riposteWindow = 0;
+      // la respuesta tras una parada precisa avanza hasta el rival desviado (sin teletransporte)
+      const tgt = this.riposteTarget;
+      if (tgt && tgt.alive) {
+        const d = (tgt.x - this.body.x) * this.facing;
+        if (d > 0) this.attack.lunge = Math.max(0.4, Math.min(2.6, d - 0.95));
+      }
+    }
     if (id === 'airCut' && this.vy < 1) this.vy = Math.max(this.vy, 1.2); // breve sostén, sin suspender indefinidamente
     this.game.events.emit('attack', { id });
   }

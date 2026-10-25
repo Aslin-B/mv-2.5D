@@ -99,3 +99,8 @@ metalnessFactor = vSurf.y;`)
   mat.customProgramCacheKey = () => 'charmat-v1';
   return mat;
 }
+
+// Copia independiente (mismos parámetros, uniformes propios: destello de impacto por instancia).
+export function cloneCharMaterial(m) {
+  return makeCharMaterial({ bumpScale: m.userData.bumpScale.value, envIntensity: m.envMapIntensity, side: m.side });
+}
