@@ -39,15 +39,21 @@ function flareTexture(size = 128) {
   const c = document.createElement('canvas');
   c.width = c.height = size;
   const ctx = c.getContext('2d');
-  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.15, 'rgba(255,255,255,0.5)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  const h = size / 2;
+  // núcleo pequeño y halo corto: marca el punto de contacto sin tapar a los personajes
+  const g = ctx.createRadialGradient(h, h, 0, h, h, h * 0.55);
+  g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.12, 'rgba(255,255,255,0.55)');
+  g.addColorStop(0.4, 'rgba(255,255,255,0.1)'); g.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = g; ctx.fillRect(0, 0, size, size);
   ctx.globalCompositeOperation = 'lighter';
-  for (const [w, h] of [[size, 3], [3, size * 0.7]]) {
-    const lg = ctx.createLinearGradient(size / 2 - w / 2, 0, size / 2 + w / 2, 0);
-    ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    ctx.fillRect(size / 2 - w / 2, size / 2 - h / 2, w, h);
-    void lg;
+  // rayos afilados que se desvanecen hacia las puntas
+  for (const [len, wid, rot] of [[h, 2.2, 0], [h * 0.62, 1.8, Math.PI / 2]]) {
+    ctx.save(); ctx.translate(h, h); ctx.rotate(rot);
+    const lg = ctx.createLinearGradient(-len, 0, len, 0);
+    lg.addColorStop(0, 'rgba(255,255,255,0)'); lg.addColorStop(0.5, 'rgba(255,255,255,0.9)'); lg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = lg;
+    ctx.beginPath(); ctx.moveTo(-len, 0); ctx.lineTo(0, -wid); ctx.lineTo(len, 0); ctx.lineTo(0, wid); ctx.closePath(); ctx.fill();
+    ctx.restore();
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
@@ -290,7 +296,7 @@ export class Game {
     E.on('heroDead', () => { this.deathTimer = 2.2; this.letterboxTarget = 0; });
     E.on('enemyAlert', (d) => A.play('alert', { pan: panX(d.who.x) }));
     E.on('enemyWindup', (d) => A.play('windup', { pan: panX(d.who.x) }));
-    E.on('enemyTell', (d) => { A.play('tell', { pan: panX(d.who.x) }); this.glint(d.tip, 0.45, 0.95); });
+    E.on('enemyTell', (d) => { A.play('tell', { pan: panX(d.who.x) }); this.glint(d.tip, 0.45, 0.8); });
     E.on('enemyDead', (d) => {
       A.play('enemyDead', { pan: panX(d.x) });
       this.slow(0.4, 0.35);
@@ -304,7 +310,7 @@ export class Game {
       this.flash = 0.22; this.post.final.uniforms.flashColor.value.set('#fff1d6');
       this.cameraShake(0.32);
       this.burst(this.fx.sparks, d.x, d.y, 34, [1.0, 0.78, 0.45], 6, 0.5);
-      this.glint(new THREE.Vector3(d.x, d.y, 0.3), 0.3, 1.35);
+      this.glint(new THREE.Vector3(d.x, d.y, 0.3), 0.3, 1.05);
       this.hud.toast('¡Parada precisa! Contraataca ahora', 1.6);
     });
     E.on('wallHit', (d) => { A.play('stone'); this.burst(this.fx.dust, d.x, d.y, 12, [0.7, 0.64, 0.55], 2); this.cameraShake(0.12); });
@@ -597,7 +603,11 @@ export class Game {
   }
 
   applyZone(x, snap = false) {
-    const z = LIGHT_ZONES.sample(x);
+    // media a lo ancho del encuadre: la exposición se adapta a lo que se ve (una puerta abierta al
+    // exterior ya no se quema con la exposición del interior)
+    const c = this.camera.cam;
+    const hw = this.camera.dist * Math.tan(THREE.MathUtils.degToRad(c.fov / 2)) * c.aspect;
+    const z = LIGHT_ZONES.sampleView(x, hw);
     const k = snap ? 1 : 0.06;
     const L = this.lights;
     const r = this.renderer;

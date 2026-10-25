@@ -106,13 +106,14 @@ metalnessFactor = vSurf.y;`)
   // Destello de impacto / contorno (feedback de golpe), no una luz de escena.
   float nv = clamp(dot(normalize(vViewPosition), normal), 0.0, 1.0);
   float fres = pow(1.0 - nv, 2.0);
-  totalEmissiveRadiance += cmRim * (0.25 + fres);
+  // casi todo en el borde: el interior conserva el color y el material (no un maniquí blanco)
+  totalEmissiveRadiance += cmRim * 1.1 * fres * fres;
   // contorno direccional: más fuerte en los bordes orientados hacia la luz de recorte
   float edge = pow(1.0 - nv, 4.0) * clamp(dot(normal, cmEdgeDir) * 0.9 + 0.2, 0.0, 1.0);
   totalEmissiveRadiance += cmEdge * cmEdgeTint * edge;
 }`);
   };
-  mat.customProgramCacheKey = () => 'charmat-v3';
+  mat.customProgramCacheKey = () => 'charmat-v4';
   return mat;
 }
 

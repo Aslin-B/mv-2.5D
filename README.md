@@ -46,7 +46,9 @@ node tests/judge/summary.mjs <n>       # tabla de métricas
 ```
 
 La rúbrica y los topes automáticos están en [`docs/CALIDAD.md`](docs/CALIDAD.md); los informes de
-cada iteración, en [`docs/juez/`](docs/juez/).
+cada iteración, en [`docs/juez/`](docs/juez/). Tras tres iteraciones de perfeccionamiento la nota
+del juez pasó de 5,6 a 6,5 sobre 10 (10 = acabado de Metroid Dread); la comparación está en
+[`docs/juez/img/antes-despues.jpg`](docs/juez/img/antes-despues.jpg).
 
 ## Estructura
 

@@ -186,17 +186,26 @@ if (withVideo) {
     await G(() => window.__game.render(1 / 30));
     await g.page.screenshot({ path: `${dir}/v${String(n++).padStart(4, '0')}.png` });
   };
-  // Tramo 1: travesía del canal (salto de hueco, agarre, subida, deslizamiento, salto sobre el agua)
+  // Tramo 1: travesía del canal (agarre al pilar, subida, deslizamiento, salto sobre el agua).
+  // Conductor reactivo: decide la entrada según el estado real, como lo haría un jugador.
   await g.teleport(58.6, 1.6, 1);
   await G(() => window.__game.settle());
-  const plan = [
-    [{ right: true }, 24], [{ right: true, jump: true }, 26], [{ right: true }, 30], [{ right: true, up: true }, 40],
-    [{ right: true }, 50], [{ right: true, run: true }, 26], [{ right: true, run: true, down: true }, 2],
-    [{ right: true, run: true }, 70], [{ right: true, run: true, jump: true }, 26], [{ right: true }, 30], [{}, 24],
-  ];
-  for (const [inp, steps] of plan) {
-    await g.input(inp);
-    for (let k = 0; k < steps; k += 2) { await g.step(2); await frame(); }
+  {
+    let phase = 'A', hold = 0, after = 0;
+    for (let k = 0; k < 420 && after < 40; k++) {
+      const st = await g.state();
+      let inp = {};
+      if (phase === 'A') { inp = { right: true, jump: st.x >= 60.5 }; if (st.mode === 'hang' || st.mode === 'mantle') phase = 'B'; }
+      else if (phase === 'B') { inp = { right: true, up: true }; if (st.mode === 'ground') phase = 'C'; }
+      else if (phase === 'C') { inp = { right: true, run: st.y < 2 }; if (st.y < 2 && st.grounded && st.x > 68.3 && Math.abs(st.vx) > 3) phase = 'D'; }
+      else if (phase === 'D') { inp = { right: true, run: true, down: true }; phase = 'E'; }
+      else if (phase === 'E') { inp = { right: true, run: true }; if (st.x >= 78.9 && st.grounded) { phase = 'F'; hold = 22; } }
+      else if (phase === 'F') { inp = { right: true, run: true, jump: hold-- > 0 }; if (st.x > 83.4 && st.grounded) phase = 'G'; }
+      else { inp = after < 16 ? { right: true } : {}; after++; }
+      await g.input(inp);
+      await g.step(2);
+      await frame();
+    }
   }
   // Tramo 2: duelo contra el saqueador de la galería
   await G(() => { const G = window.__game.game; G.resetEnemy(G.enemies[0]); G.hero.hp = G.hero.maxHp; });
@@ -217,6 +226,20 @@ if (withVideo) {
     await g.step(2);
     await frame();
   }
+  await g.input({});
+  // Tramo 3: recoger la clavija (plano corto) y abrir la compuerta
+  await g.teleport(95.0, 3.9, 1);
+  await G(() => window.__game.settle());
+  for (let k = 0; k < 10; k++) { await g.step(2); await frame(); }
+  await g.input({ interact: true }); await g.step(2); await g.input({});
+  for (let k = 0; k < 100; k++) { await g.step(2); await frame(); }
+  await g.teleport(101.8, 1.8, 1);
+  await G(() => window.__game.settle());
+  for (let k = 0; k < 10; k++) { await g.step(2); await frame(); }
+  await g.input({ tool: true }); await g.step(2); await g.input({});
+  for (let k = 0; k < 130; k++) { await g.step(2); await frame(); }
+  await g.input({ right: true });
+  for (let k = 0; k < 45; k++) { await g.step(2); await frame(); }
   await g.input({});
   const mp4 = `${out}/motor.mp4`;
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', '30', '-i', `${dir}/v%04d.png`, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '21', '-preset', 'slow', '-movflags', '+faststart', mp4]);

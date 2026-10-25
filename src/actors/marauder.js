@@ -141,8 +141,8 @@ export class Marauder {
     this.stateT += dt;
     this.modeT += dt;
     if (this.cooldown > 0) this.cooldown -= dt;
-    if (this.flash > 0) this.flash = Math.max(0, this.flash - dt * 7);
-    for (const m of this.model.materials) m.userData.rimColor.value.setRGB(this.flash * 0.38, this.flash * 0.28, this.flash * 0.2);
+    if (this.flash > 0) this.flash = Math.max(0, this.flash - dt * 10);
+    for (const m of this.model.materials) m.userData.rimColor.value.setRGB(this.flash * 0.62, this.flash * 0.36, this.flash * 0.18);
 
     if (this.state === 'dead') {
       this.deadT += dt;

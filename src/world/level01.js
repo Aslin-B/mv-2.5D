@@ -57,7 +57,7 @@ export function makeMaterials() {
     floor: triplanarMaterial({ set: flags, scale: 0.32, moss: 0.25 }),
     floorInt: triplanarMaterial({ set: flags, scale: 0.36, moss: 0.0, color: '#cfc6bb' }),
     wood: triplanarMaterial({ set: wood, scale: 0.9, roughness: 1, normalScale: 1.2, grime: 0.1 }),
-    rock: triplanarMaterial({ set: rock, scale: 0.11, moss: 0.4, normalScale: 1.4, mossColor: '#4e5a32' }),
+    rock: triplanarMaterial({ set: rock, scale: 0.17, moss: 0.4, normalScale: 1.4, mossColor: '#4e5a32' }),
     rockFar: triplanarMaterial({ set: rock, scale: 0.05, moss: 0.3, normalScale: 0.8 }),
     bronze: bronzeMaterial('#8b6746'),
     iron: new THREE.MeshStandardMaterial({ color: '#3b3b3d', metalness: 0.85, roughness: 0.55 }),

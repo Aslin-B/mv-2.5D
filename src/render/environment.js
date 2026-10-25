@@ -155,6 +155,18 @@ export class Zones {
     out.fog = new THREE.Color(a.fogColor).lerp(new THREE.Color(b.fogColor), t);
     return out;
   }
+  // Media ponderada de cinco muestras entre x - hw y x + hw (más peso en el centro).
+  sampleView(x, hw) {
+    const out = {};
+    const fog = new THREE.Color(0, 0, 0);
+    for (const [o, w] of [[-1, 0.15], [-0.5, 0.2], [0, 0.3], [0.5, 0.2], [1, 0.15]]) {
+      const s = this.sample(x + o * hw);
+      for (const k of Object.keys(s)) if (k !== 'fog') out[k] = (out[k] || 0) + s[k] * w;
+      fog.r += s.fog.r * w; fog.g += s.fog.g * w; fog.b += s.fog.b * w;
+    }
+    out.fog = fog;
+    return out;
+  }
 }
 
 // Banda de neblina del valle: plano vertical con degradado (denso abajo) y deriva lenta. Separa

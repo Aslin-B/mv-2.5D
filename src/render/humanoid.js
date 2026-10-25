@@ -100,11 +100,15 @@ export function standardBody(scene, P, B, mats) {
   const h = P.hunch;
   // Torso
   scene.add(ellipsoid([0, P.hipY + 0.02, -0.005], [0.162 * k, 0.11, 0.112 * k], { bone: 'hips', mat: mats.pelvis }));
-  scene.add(ellipsoid([0, P.spineY + 0.035, 0.0 - h * 0.02], [0.142 * k * w, 0.11, 0.098 * k * w], { bone: 'spine', mat: mats.torso }));
-  scene.add(ellipsoid([0, P.chestY + 0.035, -0.005 - h * 0.04], [0.172 * k * cw, 0.15, 0.118 * k], { bone: 'chest', mat: mats.torso }));
+  // cintura casi tan ancha como la cadera: tronco recto bajo el acolchado, sin talle de reloj de arena
+  scene.add(ellipsoid([0, P.spineY + 0.035, 0.0 - h * 0.02], [0.156 * k * w, 0.11, 0.1 * k * w], { bone: 'spine', mat: mats.torso }));
+  scene.add(ellipsoid([0, P.chestY + 0.035, -0.002 - h * 0.04], [0.172 * k * cw, 0.15, 0.108 * k], { bone: 'chest', mat: mats.torso }));
   scene.add(ellipsoid([0, P.chestY + 0.025, -0.045 - h * 0.05], [0.165 * k * cw, 0.13, 0.09 * k], { bone: 'chest', mat: mats.torso }));
+  // Pecho: una sola placa ancha y plana (dos volúmenes separados se leían como busto bajo el acolchado)
+  scene.add(ellipsoid([0, P.chestY + 0.05, 0.048 - h * 0.03], [0.15 * k * cw, 0.074, 0.064 * k], { bone: 'chest', mat: mats.torso }));
+  // relleno bajo el pecho: el frente baja recto hasta la cintura (sin pliegue que dibuje un busto)
+  scene.add(ellipsoid([0, P.chestY - 0.085, 0.012 - h * 0.03], [0.158 * k * cw, 0.12, 0.098 * k], { bone: 'spine', mat: mats.torso }));
   for (const s of [1, -1]) {
-    scene.add(ellipsoid([0.068 * s * cw, P.chestY + 0.055, 0.058 - h * 0.03], [0.082 * k * cw, 0.068, 0.058 * k], { bone: 'chest', mat: mats.torso }));
     // trapecio hacia el hombro
     const clav = pos[s > 0 ? 'clavL' : 'clavR'];
     const J = pos[s > 0 ? 'armL' : 'armR'];

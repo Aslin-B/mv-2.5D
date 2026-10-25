@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { POSE, CARRY, ATTACKS, makePose, accumulate, overlay, addPose } from './poses.js';
 import { solveTwoBone, setBoneWorldQuaternion } from './ik.js';
 import { clamp, lerp, smoothstep, damp, springStep, DEG, easeInOutSine } from '../core/math.js';
+import { EYELID_OPEN } from '../render/heroModel.js';
 
 // Animador procedural del humanoide:
 // - Locomoción in-place conducida por la física (biblia §13.5): la fase del ciclo avanza con la
@@ -581,7 +582,7 @@ export class Animator {
       c = u < 1 ? Math.sin(u * Math.PI) : 0;
       if (u >= 1) { this.blink.t = 0; this.blink.next = 2.2 + Math.random() * 3.2; }
     }
-    for (const e of eyes) e.lid.rotation.x = -0.35 + c * 0.95;
+    for (const e of eyes) e.lid.rotation.x = EYELID_OPEN + c * 0.95;
   }
 
   updateTail(dt) {

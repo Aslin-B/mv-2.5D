@@ -20,6 +20,9 @@ const C = {
   steel: '#4c5258', brass: '#8b6746', blade: '#9aa1a8',
 };
 
+// Párpado superior en reposo: cubre el tercio alto del iris (mirada serena, no de sorpresa).
+export const EYELID_OPEN = -0.27;
+
 export function buildHero() {
   const P = defaultProportions();
   const mat = makeCharMaterial({ bumpScale: 1.0 });
@@ -45,6 +48,13 @@ export function buildHero() {
     }
     if (m === 'torso' || m === 'sleeve' || (m === 'pelvis' && y > 0.93)) {
       const c = mixc(C.gambeson, C.gambesonDark, smoothstep(0.35, 0.75, noise3(x, y, z, 9)) * 0.6 + (y < 1.05 ? 0.2 : 0));
+      // cierre cruzado del gambesón: costura y alamares de cuero, algo desplazados del centro
+      if (m !== 'sleeve' && z > 0.04 && y > 0.98 && y < 1.46) {
+        const dx = Math.abs(x - 0.03 + (y - 1.2) * 0.04);
+        const tog = Math.abs(((y - 1.0) / 0.085) % 1 - 0.5) < 0.12 && dx < 0.014;
+        if (tog) return { c: mulc(C.leather, 0.8 + n * 0.3), r: 0.6, m: 0, p: PATTERN.leather, w: 0.6 };
+        if (dx < 0.0045) return { c: mulc(C.gambesonDark, 0.6), r: 0.9, m: 0, p: PATTERN.cloth };
+      }
       return { c: mulc(c, 0.92 + n * 0.16), r: 0.88, m: 0, p: m === 'sleeve' ? PATTERN.cloth : PATTERN.quilt };
     }
     if (m === 'boot') {
@@ -138,7 +148,8 @@ export function buildHero() {
 
   // Ojos (esclerótica, iris avellana, pupila) y párpados para parpadear.
   const eyes = [];
-  const eyeWhite = new THREE.MeshStandardMaterial({ color: '#b9aa9a', roughness: 0.12 });
+  const eyeWhite = new THREE.MeshStandardMaterial({ color: '#a89684', roughness: 0.12 });
+  const lashMat = new THREE.MeshStandardMaterial({ color: '#1c140f', roughness: 0.6 });
   const irisMat = new THREE.MeshStandardMaterial({ color: '#4f3f22', roughness: 0.2 });
   const pupilMat = new THREE.MeshStandardMaterial({ color: '#0d0a08', roughness: 0.1 });
   const lidMat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...C.skin), roughness: 0.55 });
@@ -155,11 +166,13 @@ export function buildHero() {
     const pupil = new THREE.Mesh(pupG, pupilMat);
     const lidG = new THREE.SphereGeometry(r * 1.12, 18, 8, 0, Math.PI * 2, 0, Math.PI * 0.55);
     const lid = new THREE.Mesh(lidG, lidMat);
-    lid.rotation.x = -0.35;
+    lid.rotation.x = EYELID_OPEN;
+    // línea de pestañas en el borde del párpado: perfila el ojo y quita la mirada de muñeco
+    lid.add(new THREE.Mesh(new THREE.SphereGeometry(r * 1.13, 18, 2, 0, Math.PI * 2, Math.PI * 0.48, Math.PI * 0.075), lashMat));
     // párpado inferior fijo: reduce la esclerótica visible (sin mirada de muñeco)
     const lowG = new THREE.SphereGeometry(r * 1.09, 18, 6, 0, Math.PI * 2, Math.PI * 0.62, Math.PI * 0.38);
     const low = new THREE.Mesh(lowG, lidMat);
-    low.rotation.x = 0.28;
+    low.rotation.x = 0.2;
     g.add(white, iris, pupil, lid, low);
     bones.head.add(g);
     eyes.push({ group: g, lid, iris, pupil });
@@ -381,11 +394,11 @@ export function buildHero() {
     const prof = [];
     for (let i = 0; i <= 6; i++) {
       const t = i / 6;
-      prof.push(new THREE.Vector2(0.079 - t * 0.012 + Math.sin(t * Math.PI) * 0.004, 1.425 + t * 0.075));
+      prof.push(new THREE.Vector2(0.08 - t * 0.013 + Math.sin(t * Math.PI) * 0.004, 1.44 + t * 0.085));
     }
     const g = new THREE.LatheGeometry(prof, 28);
     g.scale(1, 1, 0.92);
-    paintUniform(g, '#5f503f', 0.88, 0, PATTERN.quilt);
+    paintUniform(g, '#2c3645', 0.88, 0, PATTERN.quilt);   // mismo paño que el gambesón; tapa el paso piel/tela
     g.translate(0, -pos.chest[1], -0.012 - pos.chest[2]);
     const m = add(bones.chest, g);
     m.material = makeCharMaterial({ side: THREE.DoubleSide });
