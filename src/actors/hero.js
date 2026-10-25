@@ -115,9 +115,13 @@ export class Hero {
     // ---- Estados que retiran el control ----
     if (this.mode === 'dead') { this.vx *= 0.9; this.applyGravity(dt); this.integrate(dt); return; }
     if (this.mode === 'interact') {
-      this.vx = approach(this.vx, 0, T.brake * dt);
+      // paso corto hasta quedar a la distancia de la mano y mirada fija en lo que se manipula
+      const I = this.interact;
+      if (I && I.approachX != null && this.modeT < 0.3) this.vx = clamp((I.approachX - b.x) / Math.max(0.3 - this.modeT, 0.1), -2.6, 2.6);
+      else this.vx = approach(this.vx, 0, T.brake * dt);
+      this.lookTarget = I ? (I.lookAt || I.point) : null;
       this.applyGravity(dt); this.integrate(dt);
-      if (this.modeT >= this.modeDur) { this.setMode('ground'); this.interact = null; }
+      if (this.modeT >= this.modeDur) { this.setMode('ground'); this.interact = null; this.lookTarget = null; }
       return;
     }
     if (this.mode === 'hit') {

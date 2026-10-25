@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { POSE, CARRY, ATTACKS, MAGE_CAST, FINGER_POSES, UPPER_MASK, makePose, accumulate, overlay, addPose, mirrorDef } from './poses.js';
-import { solveTwoBone, setBoneWorldQuaternion } from './ik.js';
+import { solveTwoBone, setBoneWorldQuaternion, rotateBoneWorld } from './ik.js';
 import { clamp, lerp, smoothstep, damp, springStep, DEG, easeInOutSine } from '../core/math.js';
 import { EYELID_OPEN } from '../render/heroModel.js';
 import { ORB_PHASES } from '../render/eclipseOrb.js';
@@ -12,6 +12,7 @@ import { ORB_PHASES } from '../render/eclipseOrb.js';
 // - Capas: base de locomoción + superposición de torso + aditivos (respiración, inclinación, mirada).
 
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3();
+const _v5 = new THREE.Vector3(), _v6 = new THREE.Vector3(), _v7 = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
 const _e = new THREE.Euler();
 const _m1 = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
@@ -110,10 +111,14 @@ export class Animator {
     this.mode = s.mode;
 
     // 1) Orientación: giro animado a través del lado de cámara (sin espejo instantáneo, §6.5).
-    const yTarget = dir * o.yawSide;
+    // al manipular algo del muro, el cuerpo se vuelve hacia él (tres cuartos de espalda) y da medio
+    // paso hacia el fondo
+    const faceT = s.mode === 'interact' && s.interact && s.interact.face ? clamp(s.modeT / s.modeDur, 0, 1) : 1;
+    this.faceW = damp(this.faceW || 0, faceT < 0.85 ? 1 : 0, 0.1, dt);
+    const yTarget = dir * lerp(o.yawSide, 2.45, this.faceW);
     const maxStep = (2 * o.yawSide / o.turnTime) * dt;
     this.yaw += clamp(yTarget - this.yaw, -maxStep, maxStep);
-    this.root.position.set(s.x, s.y, 0);
+    this.root.position.set(s.x, s.y, -0.3 * this.faceW);
     this.root.rotation.set(0, this.yaw, 0);
 
     // 2) Restablecer huesos a la pose de enlace.
@@ -218,9 +223,22 @@ export class Animator {
     // Interacción (recoger / insertar clavija): arrodillarse a medias.
     if (s.mode === 'interact' && s.interact) {
       const t = clamp(s.modeT / s.modeDur, 0, 1);
-      const w = smoothstep(0, 0.25, t) * (1 - smoothstep(0.75, 1, t));
-      overlay(pose, s.interact.kind === 'pickup' ? this.POSE.kneel : { hip: [0, -0.08, 0], spine: [14, 0, 0], chest: [6, 0, 0], neck: [8, 0, 0] }, w);
-      carry = this.blendCarry(carry, this.CARRY.kneel, w * 0.8);
+      const k = s.interact.kind;
+      if (k === 'pickup') {
+        const w = smoothstep(0, 0.25, t) * (1 - smoothstep(0.75, 1, t));
+        overlay(pose, this.POSE.kneel, w);
+        carry = this.blendCarry(carry, this.CARRY.kneel, w * 0.8);
+      } else if (k === 'take') {
+        // inclinarse hacia el pedestal al alcanzar; erguirse al mirar la pieza en la mano
+        const reach = smoothstep(0.1, 0.32, t) * (1 - smoothstep(0.45, 0.62, t));
+        const look = smoothstep(0.48, 0.62, t) * (1 - smoothstep(0.78, 0.92, t));
+        addPose(pose, { hip: [0, -0.05, 0], hips: [6, 0, 0], spine: [10, 0, 0], chest: [8, -6, 0], neck: [4, 0, 0] }, reach);
+        addPose(pose, { spine: [-2, 0, 0], chest: [4, 8, 0], neck: [10, 0, 0], head: [8, 0, 0] }, look);
+      } else {
+        // encaje del muro: tronco algo inclinado hacia el agujero y el peso en la pierna de delante
+        const w = smoothstep(0.05, 0.25, t) * (1 - smoothstep(0.75, 1, t));
+        addPose(pose, { hip: [0, -0.04, 0], hips: [4, 0, 0], spine: [8, 0, 0], chest: [5, 0, 0], neck: [4, 0, 0] }, w);
+      }
     }
 
     // Ataque o parada: superposición de torso y trayectoria de espada.
@@ -799,6 +817,12 @@ export class Animator {
       if (!this.offer) op = mix(op, mix(mix(P.relax, P.claw, wC * 0.6), P.contain, wE), this.castW);
     }
     if (this.launchW > 0.05) cp = mix(cp, P.open, this.launchW);
+    // mano que manipula: abierta al llegar, puño al sujetar la clavija
+    if (s.mode === 'interact' && s.interact) {
+      const t = clamp(s.modeT / s.modeDur, 0, 1), k = s.interact.kind;
+      if (k === 'take') cp = t < 0.36 ? P.open : t < 0.88 ? P.grip : P.relax;
+      else if (k === 'socket') cp = t > 0.06 && t < 0.7 ? P.grip : t < 0.06 ? P.relax : P.open;
+    }
     const tgt = { [cs]: cp, [os]: op };
     void cw; void ow;
     for (const L of ['L', 'R']) {
@@ -851,16 +875,69 @@ export class Animator {
     solveTwoBone(b['arm' + o], b['fore' + o], b['hand' + o], target, pole, w);
   }
 
+  // Coreografía de la mano que manipula (la del lado de cámara, para que el gesto se lea): recorre
+  // puntos clave en espacio mundo según el tiempo de la interacción, con giro de muñeca al encajar.
   solveReach(s) {
-    const b = this.b;
+    const b = this.b, I = s.interact;
     const t = clamp(s.modeT / s.modeDur, 0, 1);
-    const w = smoothstep(0.15, 0.4, t) * (1 - smoothstep(0.6, 0.9, t));
+    const H = this.castSide;
+    this.reachSide = H;
+    const dir = s.facing >= 0 ? 1 : -1;
+    const p = _v.set(I.point.x, I.point.y, I.point.z ?? 0.1);
+    // bolsa del cinto y punto ante el pecho, en el espacio del personaje (+Z adelante, +X hacia la cámara)
+    const side = H === 'R' ? -1 : 1;
+    const pouch = this.root.localToWorld(_v2.set(0.17 * side, 0.98, 0.08));
+    const chest = this.root.localToWorld(_v3.set(0.1 * side, 1.3, 0.3));
+    const ease = (a, c) => easeInOutSine(clamp((t - a) / (c - a), 0, 1));
+    let w = 0;
+    const target = _v4;
+    if (I.kind === 'take') {
+      w = smoothstep(0.1, 0.3, t) * (1 - smoothstep(0.88, 1, t));
+      if (t < 0.48) target.copy(p);
+      else if (t < 0.72) target.copy(p).lerp(chest, ease(0.48, 0.66));
+      else target.copy(chest).lerp(pouch, ease(0.72, 0.86));
+    } else if (I.kind === 'socket') {
+      const pre = _v5.copy(p).add(_v6.set(0, 0, 0.16));
+      w = smoothstep(0.02, 0.12, t) * (1 - smoothstep(0.72, 0.9, t));
+      if (t < 0.14) target.copy(pouch);
+      else if (t < 0.36) target.copy(pouch).lerp(pre, ease(0.14, 0.34));
+      else if (t < 0.68) target.copy(pre).lerp(p, ease(0.36, 0.42));
+      else target.copy(p).lerp(pre, ease(0.68, 0.8));
+    } else {
+      w = smoothstep(0.15, 0.4, t) * (1 - smoothstep(0.6, 0.9, t));
+      target.copy(p);
+    }
     if (w <= 0) return;
-    const p = s.interact.point;
-    const o = this.castSide === 'R' ? 'L' : 'R';
-    b['arm' + o].getWorldPosition(_v);
-    const pole = _v.clone().add(new THREE.Vector3(0, -0.6, -0.3));
-    solveTwoBone(b['arm' + o], b['fore' + o], b['hand' + o], new THREE.Vector3(p.x, p.y, p.z ?? 0.1), pole, w);
+    b['arm' + H].getWorldPosition(_v5);
+    // codo abajo y algo hacia fuera del cuerpo
+    const pole = _v6.copy(_v5).add(_v7.set(-dir * 0.15, -0.6, 0.2));
+    solveTwoBone(b['arm' + H], b['fore' + H], b['hand' + H], target.clone(), pole, w);
+    // muñeca: cuarto de vuelta al girar la clavija en el encaje
+    if (I.kind === 'socket') {
+      const tw = ease(0.42, 0.62) * (1 - ease(0.7, 0.8));
+      if (tw > 0) {
+        b['fore' + H].getWorldPosition(_v5);
+        b['hand' + H].getWorldPosition(_v6);
+        _q.setFromAxisAngle(_v7.subVectors(_v6, _v5).normalize(), -tw * Math.PI / 2 * side);
+        rotateBoneWorld(b['hand' + H], _q);
+      }
+    }
+  }
+
+  // Marco de agarre del puño: centro de la palma y orientación con el eje -Y hacia los dedos.
+  gripFrame(pos, quat) {
+    const H = this.reachSide || this.castSide;
+    const hand = this.b['hand' + H];
+    hand.updateWorldMatrix(true, false);
+    hand.getWorldPosition(_v5);
+    const rig = this.m.fingerRig && this.m.fingerRig[H];
+    const mid = rig && rig.fingers.find((f) => f.name === 'mid');
+    if (mid) mid.bones[0].getWorldPosition(_v6);
+    else _v6.copy(_v5).add(_v7.set(0, -0.08, 0).applyQuaternion(hand.getWorldQuaternion(_q2)));
+    const F = new THREE.Vector3().subVectors(_v6, _v5).normalize();
+    pos.copy(_v5).addScaledVector(F, 0.05);
+    quat.setFromUnitVectors(_v7.set(0, -1, 0), F);
+    return F;
   }
 
   updateBlink(dt) {

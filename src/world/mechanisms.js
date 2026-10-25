@@ -7,6 +7,16 @@ import { clamp, smoothstep, easeInOutSine } from '../core/math.js';
 // Cada mecanismo expone update(dt), y opcionalmente prompt() para la interfaz y onInteract().
 
 const tmpV = new THREE.Vector3();
+const _gq = new THREE.Quaternion();
+
+// Coloca un objeto (hijo directo de la escena) en el puño de la mano que manipula: el vástago
+// sigue la dirección de los dedos y el puño lo rodea por la mitad.
+function placeInHand(game, group, scale, mid = 0.06) {
+  const F = game.heroAnim.gripFrame(group.position, _gq);
+  group.quaternion.copy(_gq);
+  group.scale.setScalar(scale);
+  group.position.addScaledVector(F, -mid * scale);
+}
 
 function glowSprite(color, size, tex) {
   const m = new THREE.SpriteMaterial({ map: tex, color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
@@ -144,11 +154,14 @@ export class ClavijaPedestal {
   prompt(h) { return this.near(h) && h.mode === 'ground' ? { key: 'E', text: 'Recoger', at: new THREE.Vector3(this.x, this.y + 2.0, 0) } : null; }
   onInteract(h) {
     if (!this.near(h) || h.mode !== 'ground') return false;
-    h.setMode('interact', 1.5);
+    // de pie: un paso hasta el pedestal, la mano abierta llega a la clavija, el puño la cierra, la
+    // acerca al pecho para mirarla y la guarda en la bolsa del cinto
+    const side = Math.sign(this.x - h.x) || h.facing;
+    h.setMode('interact', 1.6);
     h.vx = 0;
-    h.facing = Math.sign(this.x - h.x) || h.facing;
-    h.interact = { kind: 'pickup', point: new THREE.Vector3(this.x, this.y + 1.25, -0.2), t: 0 };
-    this.pending = 0.75;
+    h.facing = side;
+    h.interact = { kind: 'take', point: new THREE.Vector3(this.x, this.y + 1.28, -0.35), approachX: this.x - side * 0.42, t: 0 };
+    this.pending = 0.66;
     this.game.events.emit('pickupStart', { what: 'clavija' });
     return true;
   }
@@ -163,12 +176,22 @@ export class ClavijaPedestal {
       this.pending -= dt;
       if (this.pending <= 0) {
         this.taken = true;
-        this.item.group.visible = false;
         this.glow.visible = false;
         this.light.intensity = 0;
         this.game.hero.hasClavija = true;
         this.game.events.emit('acquire', { what: 'clavija', x: this.x, y: this.y + 1.3 });
+        // la clavija pasa a la mano hasta que se guarda
+        this.game.scene.attach(this.item.group);
+        this.heldT = 0;
       }
+    }
+    if (this.heldT != null) {
+      this.heldT += dt;
+      const I = this.game.hero.interact;
+      if (this.heldT < 0.72 && I) {
+        placeInHand(this.game, this.item.group, 1.5);
+        I.lookAt = this.item.group.position;
+      } else { this.item.group.visible = false; this.heldT = null; }
     }
   }
 }
@@ -407,27 +430,48 @@ export class SocketGate {
   }
   onTool(h) {
     if (this.state !== 'closed' || !this.near(h) || !h.hasClavija || h.mode !== 'ground') return false;
-    h.setMode('interact', 0.9);
+    // se vuelve hacia el muro, saca la clavija del cinto, la mete en el encaje, le da un cuarto de
+    // vuelta con la muñeca y la suelta: el mecanismo sigue girándola solo
+    const side = Math.sign(this.socket.x - h.x) || h.facing;
+    h.setMode('interact', 1.55);
     h.vx = 0;
-    h.facing = Math.sign(this.socket.x - h.x) || h.facing;
-    h.interact = { kind: 'socket', point: new THREE.Vector3(this.socket.x, this.socket.y, -0.85), t: 0 };
+    h.facing = side;
+    h.interact = { kind: 'socket', point: new THREE.Vector3(this.socket.x, this.socket.y, -0.93), approachX: this.socket.x - side * 0.3, face: true, t: 0 };
     this.state = 'inserting'; this.t = 0;
-    this.game.events.emit('socketInsert', { x: this.socket.x, y: this.socket.y });
+    if (!this.handKey) {
+      this.handKey = buildClavija();
+      this.handKey.group.visible = false;
+      this.game.scene.add(this.handKey.group);
+    }
     return true;
   }
   update(dt) {
     this.t += dt;
-    if (this.state === 'inserting' && this.t > 0.45) {
-      this.key.group.visible = true;
-      this.state = 'turning'; this.t = 0;
-      this.game.events.emit('gateOpening', { x: (this.gate.x0 + this.gate.x1) / 2, y: this.gate.y0 });
+    if (this.state === 'inserting') {
+      const show = this.t > 0.16 && this.t < 0.64;
+      this.handKey.group.visible = show;
+      if (show) placeInHand(this.game, this.handKey.group, 1.5);
+      if (this.t >= 0.64) {
+        this.handKey.group.visible = false;
+        this.key.group.visible = true;
+        this.state = 'twisting'; this.t = 0;
+        this.game.events.emit('socketInsert', { x: this.socket.x, y: this.socket.y });
+      }
+    }
+    if (this.state === 'twisting') {
+      // el cuarto de vuelta de la mano (el animador gira la muñeca al mismo ritmo)
+      this.key.group.rotation.z = -easeInOutSine(clamp(this.t / 0.4, 0, 1)) * Math.PI / 2;
+      if (this.t >= 0.4) {
+        this.state = 'turning'; this.t = 0;
+        this.game.events.emit('gateOpening', { x: (this.gate.x0 + this.gate.x1) / 2, y: this.gate.y0 });
+      }
     }
     if (this.state === 'turning') {
       const k = clamp(this.t / 2.6, 0, 1);
       const e = easeInOutSine(k);
       const lift = e * (this.gate.y1 - this.gate.y0 - 0.2);
       this.gateGroup.position.y = lift;
-      this.key.group.rotation.z = -e * Math.PI * 4;
+      this.key.group.rotation.z = -Math.PI / 2 - e * Math.PI * 3.5;
       this.wheel.rotation.z = -e * Math.PI * 2.5;
       this.glow.material.opacity = 0.6 * (1 - k);
       this.game.cameraShake(0.04 * (1 - smoothstep(0.85, 1, k)));
