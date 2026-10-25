@@ -95,7 +95,7 @@ export class Marauder {
       carry: MARAUDER_CARRY, attacks: MARAUDER_ATTACKS, poses: MARAUDER_POSES,
       restRel: { L: 0.16, R: -0.14 }, stanceW: 0.12, cadence: 1.75,
     });
-    this.cape = new Cape(model, game.scene, { cols: 5, rows: 8, length: 0.58, palette: { base: '#5d3f28', hem: '#3a2a1c', ragged: true } });
+    this.cape = new Cape(model, game.scene, { cols: 5, rows: 8, length: 0.58, palette: { base: '#5a1d17', hem: '#2c0f0c', ragged: true } });
     // Pose inicial resuelta antes del primer fotograma
     this.anim.update(1 / 60, this.animState());
   }
@@ -141,8 +141,8 @@ export class Marauder {
     this.stateT += dt;
     this.modeT += dt;
     if (this.cooldown > 0) this.cooldown -= dt;
-    if (this.flash > 0) this.flash = Math.max(0, this.flash - dt * 5);
-    for (const m of this.model.materials) m.userData.rimColor.value.setRGB(this.flash * 1.2, this.flash * 0.9, this.flash * 0.6);
+    if (this.flash > 0) this.flash = Math.max(0, this.flash - dt * 7);
+    for (const m of this.model.materials) m.userData.rimColor.value.setRGB(this.flash * 0.38, this.flash * 0.28, this.flash * 0.2);
 
     if (this.state === 'dead') {
       this.deadT += dt;

@@ -5,6 +5,10 @@ import * as THREE from 'three';
 // (acolchado, cuero, tejido, cabello, metal martillado) en espacio de objeto, estable al deformarse.
 // No es dispersión subsuperficial ni un sombreador de piel especializado.
 
+// Luz de contorno compartida por los personajes (dirección en espacio de vista y color/intensidad
+// por zona). Imita la luz de recorte de escena para separar las siluetas del fondo (biblia §4.2).
+export const CHAR_EDGE = { color: { value: new THREE.Color(0, 0, 0) }, dir: { value: new THREE.Vector3(0.45, 0.9, 0).normalize() } };
+
 export const PATTERN = { skin: 0, quilt: 1, leather: 2, cloth: 3, hair: 4, metal: 5, plain: 6, wood: 7 };
 
 const NOISE = /* glsl */ `
@@ -58,9 +62,13 @@ export function makeCharMaterial({ bumpScale = 1.0, skinned = true, envIntensity
   });
   mat.userData.bumpScale = { value: bumpScale };
   mat.userData.rimColor = { value: new THREE.Color(0, 0, 0) };
+  mat.userData.edgeTint = { value: new THREE.Color(1, 1, 1) };
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.cmBump = mat.userData.bumpScale;
     shader.uniforms.cmRim = mat.userData.rimColor;
+    shader.uniforms.cmEdge = CHAR_EDGE.color;
+    shader.uniforms.cmEdgeDir = CHAR_EDGE.dir;
+    shader.uniforms.cmEdgeTint = mat.userData.edgeTint;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>
 attribute vec4 surf;
@@ -73,6 +81,9 @@ vObjPos = position;`);
       .replace('#include <common>', `#include <common>
 uniform float cmBump;
 uniform vec3 cmRim;
+uniform vec3 cmEdge;
+uniform vec3 cmEdgeDir;
+uniform vec3 cmEdgeTint;
 varying vec4 vSurf;
 varying vec3 vObjPos;
 ${NOISE}
@@ -87,16 +98,21 @@ metalnessFactor = vSurf.y;`)
   vec2 dH = vec2(dFdx(hgt), dFdy(hgt));
   float fw = length(fwidth(vObjPos)) * 300.0;
   float fade = 1.0 - smoothstep(0.6, 2.4, fw * (vSurf.z > 3.5 && vSurf.z < 4.5 ? 0.5 : 1.0));
-  normal = cmPerturb(-vViewPosition, normal, dH * 0.018 * cmBump * fade, faceDirection);
+  float pk = (vSurf.z > 0.5 && vSurf.z < 1.5) ? 2.2 : 1.0;   // el acolchado se lee más marcado
+  normal = cmPerturb(-vViewPosition, normal, dH * 0.018 * cmBump * fade * pk, faceDirection);
 }`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 {
   // Destello de impacto / contorno (feedback de golpe), no una luz de escena.
-  float fres = pow(1.0 - clamp(dot(normalize(vViewPosition), normal), 0.0, 1.0), 2.0);
+  float nv = clamp(dot(normalize(vViewPosition), normal), 0.0, 1.0);
+  float fres = pow(1.0 - nv, 2.0);
   totalEmissiveRadiance += cmRim * (0.25 + fres);
+  // contorno direccional: más fuerte en los bordes orientados hacia la luz de recorte
+  float edge = pow(1.0 - nv, 4.0) * clamp(dot(normal, cmEdgeDir) * 0.9 + 0.2, 0.0, 1.0);
+  totalEmissiveRadiance += cmEdge * cmEdgeTint * edge;
 }`);
   };
-  mat.customProgramCacheKey = () => 'charmat-v1';
+  mat.customProgramCacheKey = () => 'charmat-v3';
   return mat;
 }
 

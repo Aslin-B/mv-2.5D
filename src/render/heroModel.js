@@ -14,7 +14,7 @@ const C = {
   skin: lin('#b98468'), skinRed: lin('#b36a58'), skinDark: lin('#8f6250'),
   lip: lin('#98594d'), beard: lin('#2b2018'), brow: lin('#2a1f17'),
   hair: lin('#2a1c13'), hairLight: lin('#4b3424'),
-  gambeson: lin('#6e5d48'), gambesonDark: lin('#54473a'),
+  gambeson: lin('#3d4b5e'), gambesonDark: lin('#2c3645'),
   trousers: lin('#3b352f'), boot: lin('#40332a'), bootDark: lin('#2e251f'),
   glove: lin('#4a392b'), leather: lin('#5a412b'), teal: lin('#365456'),
   steel: '#4c5258', brass: '#8b6746', blade: '#9aa1a8',
@@ -55,7 +55,7 @@ export function buildHero() {
     return { c: mulc(C.trousers, 0.9 + n * 0.2), r: 0.92, m: 0, p: PATTERN.cloth };
   };
 
-  const ch = assembleCharacter({ P, bodyScene: body, bodyPaint, material: mat });
+  const ch = assembleCharacter({ P, bodyScene: body, bodyPaint, material: mat, bodyCell: 0.0142 });
   const { bones, S } = ch;
   const pos = S.pos;
   let tris = ch.triangles;
@@ -121,26 +121,33 @@ export function buildHero() {
     if (y > 1.672 && y < 1.684 && Math.abs(Math.abs(x) - 0.031) < 0.017 && z > 0.07) c = mulc(c, 0.86);
     return { c, r, m: 0, p };
   };
+  // Dos niveles de detalle: el fino solo en planos cortos; en juego la cabeza ocupa ~25 px.
+  const lods = { hi: [], lo: [] };
+  let trisHi = 0;
   const headMesh = surfaceNets(head, 0.0048);
-  const headGeo = meshToGeometry(headMesh, head, headPaint, { origin: pos.head });
-  const headMeshObj = new THREE.Mesh(headGeo, rigidMat);
+  const headMeshObj = new THREE.Mesh(meshToGeometry(headMesh, head, headPaint, { origin: pos.head }), rigidMat);
   headMeshObj.castShadow = true; headMeshObj.receiveShadow = true;
   bones.head.add(headMeshObj);
-  tris += headMesh.indices.length / 3;
-  breakdown.head = headMesh.indices.length / 3;
+  const headLo = surfaceNets(head, 0.0078);
+  const headLoObj = new THREE.Mesh(meshToGeometry(headLo, head, headPaint, { origin: pos.head }), rigidMat);
+  headLoObj.castShadow = true; headLoObj.receiveShadow = true;
+  bones.head.add(headLoObj);
+  lods.hi.push(headMeshObj); lods.lo.push(headLoObj);
+  tris += headLo.indices.length / 3; trisHi += headMesh.indices.length / 3 - headLo.indices.length / 3;
+  breakdown.head = headLo.indices.length / 3;
 
   // Ojos (esclerótica, iris avellana, pupila) y párpados para parpadear.
   const eyes = [];
-  const eyeWhite = new THREE.MeshStandardMaterial({ color: '#ddd3c8', roughness: 0.12 });
-  const irisMat = new THREE.MeshStandardMaterial({ color: '#6e5a33', roughness: 0.2 });
+  const eyeWhite = new THREE.MeshStandardMaterial({ color: '#b9aa9a', roughness: 0.12 });
+  const irisMat = new THREE.MeshStandardMaterial({ color: '#4f3f22', roughness: 0.2 });
   const pupilMat = new THREE.MeshStandardMaterial({ color: '#0d0a08', roughness: 0.1 });
   const lidMat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...C.skin), roughness: 0.55 });
   for (const s of [1, -1]) {
     const g = new THREE.Group();
-    g.position.set(0.031 * s - pos.head[0], 1.69 - pos.head[1], 0.071 - pos.head[2]);
-    const r = 0.0118;
+    g.position.set(0.031 * s - pos.head[0], 1.69 - pos.head[1], 0.068 - pos.head[2]);
+    const r = 0.0116;
     const white = new THREE.Mesh(new THREE.SphereGeometry(r, 18, 12), eyeWhite);
-    const irisG = new THREE.SphereGeometry(r * 1.004, 18, 6, 0, Math.PI * 2, 0, 0.5);
+    const irisG = new THREE.SphereGeometry(r * 1.004, 18, 6, 0, Math.PI * 2, 0, 0.6);
     irisG.rotateX(Math.PI / 2);
     const iris = new THREE.Mesh(irisG, irisMat);
     const pupG = new THREE.SphereGeometry(r * 1.008, 12, 4, 0, Math.PI * 2, 0, 0.2);
@@ -149,7 +156,11 @@ export function buildHero() {
     const lidG = new THREE.SphereGeometry(r * 1.12, 18, 8, 0, Math.PI * 2, 0, Math.PI * 0.55);
     const lid = new THREE.Mesh(lidG, lidMat);
     lid.rotation.x = -0.35;
-    g.add(white, iris, pupil, lid);
+    // párpado inferior fijo: reduce la esclerótica visible (sin mirada de muñeco)
+    const lowG = new THREE.SphereGeometry(r * 1.09, 18, 6, 0, Math.PI * 2, Math.PI * 0.62, Math.PI * 0.38);
+    const low = new THREE.Mesh(lowG, lidMat);
+    low.rotation.x = 0.28;
+    g.add(white, iris, pupil, lid, low);
     bones.head.add(g);
     eyes.push({ group: g, lid, iris, pupil });
   }
@@ -178,7 +189,9 @@ export function buildHero() {
   };
   hair.displace = (x, y, z) => {
     const a = Math.atan2(x, z);
-    return 0.0035 * Math.sin(a * 14 + y * 40) + (noise3(x, y, z, 55) - 0.5) * 0.008;
+    // mechones finos e irregulares (no trenzas regulares)
+    const w = noise3(x, y, z, 18);
+    return 0.0018 * Math.sin(a * 34 + y * 55 + w * 9) + 0.0012 * Math.sin(a * 71 + y * 20) + (noise3(x, y, z, 55) - 0.5) * 0.007;
   };
   hair.relax = 1;
   const hairPaint = (x, y, z) => {
@@ -186,12 +199,16 @@ export function buildHero() {
     return { c: mixc(C.hair, C.hairLight, smoothstep(0.55, 0.9, n) * 0.7), r: 0.52, m: 0, p: PATTERN.hair };
   };
   const hairMesh = surfaceNets(hair, 0.0064);
-  const hairGeo = meshToGeometry(hairMesh, hair, hairPaint, { origin: pos.head });
-  const hairObj = new THREE.Mesh(hairGeo, rigidMat);
+  const hairObj = new THREE.Mesh(meshToGeometry(hairMesh, hair, hairPaint, { origin: pos.head }), rigidMat);
   hairObj.castShadow = true;
   bones.head.add(hairObj);
-  tris += hairMesh.indices.length / 3;
-  breakdown.hair = hairMesh.indices.length / 3;
+  const hairLo = surfaceNets(hair, 0.0095);
+  const hairLoObj = new THREE.Mesh(meshToGeometry(hairLo, hair, hairPaint, { origin: pos.head }), rigidMat);
+  hairLoObj.castShadow = true;
+  bones.head.add(hairLoObj);
+  lods.hi.push(hairObj); lods.lo.push(hairLoObj);
+  tris += hairLo.indices.length / 3; trisHi += hairMesh.indices.length / 3 - hairLo.indices.length / 3;
+  breakdown.hair = hairLo.indices.length / 3;
 
   // Coleta corta con muelles (movimiento secundario, §12.10)
   const tailMat = rigidMat;
@@ -212,13 +229,17 @@ export function buildHero() {
   const hands = {};
   for (const [side, L] of [[1, 'L'], [-1, 'R']]) {
     const h = buildHand(side, S, { grip: side < 0, curl: side < 0 ? 1 : 0.45, mat: 'glove' });
-    const geo = meshToGeometry(h.mesh, h.scene, glovePaint, { origin: pos['hand' + L] });
-    const m = new THREE.Mesh(geo, rigidMat);
+    const m = new THREE.Mesh(meshToGeometry(h.mesh, h.scene, glovePaint, { origin: pos['hand' + L] }), rigidMat);
     m.castShadow = true;
     bones['hand' + L].add(m);
+    const hl = buildHand(side, S, { grip: side < 0, curl: side < 0 ? 1 : 0.45, mat: 'glove', cell: 0.0078 });
+    const ml = new THREE.Mesh(meshToGeometry(hl.mesh, hl.scene, glovePaint, { origin: pos['hand' + L] }), rigidMat);
+    ml.castShadow = true;
+    bones['hand' + L].add(ml);
+    lods.hi.push(m); lods.lo.push(ml);
     hands[L] = h;
-    tris += h.mesh.indices.length / 3;
-    breakdown['hand' + L] = h.mesh.indices.length / 3;
+    tris += hl.mesh.indices.length / 3; trisHi += h.mesh.indices.length / 3 - hl.mesh.indices.length / 3;
+    breakdown['hand' + L] = hl.mesh.indices.length / 3;
   }
 
   // ---------- Armadura parcial y correajes ----------
@@ -409,14 +430,22 @@ export function buildHero() {
   };
   for (const k of ['L', 'R']) capeAnchors[k] = capeAnchors[k].map((p) => new THREE.Vector3(p[0] - pos.chest[0], p[1] - pos.chest[1], p[2] - pos.chest[2]));
 
+  for (const e of eyes) lods.hi.push(e.group);
+  for (const o of [...lods.hi, ...lods.lo]) o.userData.noMerge = true;
+  const merged = mergeRigidPieces(ch.root);
+  const setDetail = (hi) => {
+    for (const o of lods.hi) o.visible = hi;
+    for (const o of lods.lo) o.visible = !hi;
+  };
+  setDetail(false);
   return {
     root: ch.root, skinned: ch.skinned, bones, S, P, eyes, tail, sword, clavija, capeAnchors,
-    materials: [mat, rigidMat], triangles: tris, breakdown,
+    materials: [mat, rigidMat], triangles: tris, trianglesHi: tris + trisHi, breakdown, setDetail, merged,
   };
 }
 
 // Solo posiciones de enlace (para construir la escena SDF antes del esqueleto).
-import { bindPositions } from './humanoid.js';
+import { bindPositions, mergeRigidPieces } from './humanoid.js';
 function assembleCharacterSpecOnly(P) { return bindPositions(P); }
 
 // Cinta plana que sigue una curva, orientada según la normal de una superficie.

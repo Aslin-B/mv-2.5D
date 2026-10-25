@@ -3,7 +3,7 @@ import { StaticBatch, Kit, buildWheel } from '../render/architecture.js';
 import { triplanarMaterial, bronzeMaterial } from '../render/materials.js';
 import { stoneAshlar, stoneFlags, woodPlanks, ivyCard, shaftTexture, waterNormals, rockFace, bannerTexture, grassCard } from '../render/textures.js';
 import { buildWater, buildWaterfall } from '../render/water.js';
-import { SUN_DIR, Zones } from '../render/environment.js';
+import { SUN_DIR, Zones, buildMistBand } from '../render/environment.js';
 import { ClavijaPedestal, CaudalFragment, RestFountain, CrackedWall, SocketGate, Trigger } from '../world/mechanisms.js';
 import { mulberry32, valueNoise3 } from '../core/rng.js';
 
@@ -27,20 +27,20 @@ export const SPAWN = { x: -6.5, y: 0 };
 
 // Iluminación por zonas: exposición, sol, cielo, niebla y entorno (interiores más oscuros).
 export const LIGHT_ZONES = new Zones([
-  { x: -100, exposure: 0.92, sun: 4.2, hemi: 0.72, fogD: 0.0095, env: 0.6, fill: 3.2, bloom: 0.32, fogColor: '#b49a8f' },
-  { x: 21, blend: 3, exposure: 1.3, sun: 4.6, hemi: 0.34, fogD: 0.02, env: 0.32, fill: 3.0, bloom: 0.55, fogColor: '#4a3f38' },
-  { x: 49, blend: 3, exposure: 0.9, sun: 4.2, hemi: 0.7, fogD: 0.0105, env: 0.6, fill: 3.0, bloom: 0.32, fogColor: '#ad9286' },
-  { x: 87, blend: 3, exposure: 1.4, sun: 4.4, hemi: 0.3, fogD: 0.018, env: 0.3, fill: 3.0, bloom: 0.6, fogColor: '#3e342e' },
-  { x: 107, blend: 3, exposure: 0.85, sun: 4.4, hemi: 0.72, fogD: 0.008, env: 0.6, fill: 3.2, bloom: 0.34, fogColor: '#bf9c88' },
+  { x: -100, exposure: 0.92, sun: 4.2, hemi: 0.72, fogD: 0.0095, env: 0.6, fill: 3.2, bloom: 0.32, rim: 0.32, fogColor: '#b49a8f' },
+  { x: 21, blend: 3, exposure: 1.3, sun: 4.6, hemi: 0.34, fogD: 0.02, env: 0.32, fill: 3.8, bloom: 0.55, rim: 0.6, fogColor: '#4a3f38' },
+  { x: 49, blend: 3, exposure: 0.9, sun: 4.2, hemi: 0.7, fogD: 0.0105, env: 0.6, fill: 3.0, bloom: 0.32, rim: 0.32, fogColor: '#ad9286' },
+  { x: 87, blend: 3, exposure: 1.4, sun: 4.4, hemi: 0.3, fogD: 0.018, env: 0.3, fill: 3.8, bloom: 0.6, rim: 0.65, fogColor: '#3e342e' },
+  { x: 107, blend: 3, exposure: 0.85, sun: 4.4, hemi: 0.72, fogD: 0.008, env: 0.6, fill: 3.2, bloom: 0.34, rim: 0.32, fogColor: '#bf9c88' },
 ]);
 
 // Encuadre por zona: distancia de cámara y límites horizontales del centro de la vista.
 export const CAMERA_ZONES = [
-  { x: -100, dist: 14.5, minX: -3.2, maxX: 200 },
-  { x: 21, dist: 12.8, minX: -3.2, maxX: 200 },
-  { x: 49, dist: 13.8, minX: -3.2, maxX: 200 },
-  { x: 87, dist: 12.8, minX: -3.2, maxX: 200 },
-  { x: 107, dist: 15, minX: -3.2, maxX: 121.5 },
+  { x: -100, dist: 13.2, minX: -3.2, maxX: 200 },
+  { x: 21, dist: 11.8, minX: -3.2, maxX: 200 },
+  { x: 49, dist: 12.6, minX: -3.2, maxX: 200 },
+  { x: 87, dist: 11.8, minX: -3.2, maxX: 200 },
+  { x: 107, dist: 13.8, minX: -3.2, maxX: 121.5 },
 ];
 
 export function makeMaterials() {
@@ -50,13 +50,13 @@ export function makeMaterials() {
   const wood = woodPlanks(512, 3);
   const rock = rockFace(512, 21);
   const m = {
-    stone: triplanarMaterial({ set: ashlar, scale: 0.42, moss: 0.55, grime: 0.3 }),
-    stoneInt: triplanarMaterial({ set: ashlarDark, scale: 0.45, moss: 0.15, color: '#d8cfc4' }),
+    stone: triplanarMaterial({ set: ashlar, scale: 0.42, moss: 0.55, grime: 0.55 }),
+    stoneInt: triplanarMaterial({ set: ashlarDark, scale: 0.45, moss: 0.15, grime: 0.4, color: '#d8cfc4' }),
     plinth: triplanarMaterial({ set: ashlarDark, scale: 0.4, moss: 0.4, grime: 0.6, color: '#9c8f82' }),
     stoneWet: triplanarMaterial({ set: ashlar, scale: 0.42, moss: 0.8, wetLevel: 0.9, wetBand: 1.4, mossColor: '#3f5129' }),
     floor: triplanarMaterial({ set: flags, scale: 0.32, moss: 0.25 }),
     floorInt: triplanarMaterial({ set: flags, scale: 0.36, moss: 0.0, color: '#cfc6bb' }),
-    wood: triplanarMaterial({ set: wood, scale: 0.9, roughness: 1, normalScale: 1.2 }),
+    wood: triplanarMaterial({ set: wood, scale: 0.9, roughness: 1, normalScale: 1.2, grime: 0.1 }),
     rock: triplanarMaterial({ set: rock, scale: 0.11, moss: 0.4, normalScale: 1.4, mossColor: '#4e5a32' }),
     rockFar: triplanarMaterial({ set: rock, scale: 0.05, moss: 0.3, normalScale: 0.8 }),
     bronze: bronzeMaterial('#8b6746'),
@@ -151,6 +151,15 @@ export function buildLevel01(game, tex) {
     for (let i = 0; i < 30; i++) {
       const s = R(0.7, 1.4);
       cypress(batch, mats, R(-30, 170), -33 + R(-1, 5), R(-62, -24), s * 1.3, 9 * s * R(0.9, 1.3), i, 8, false);
+    }
+    // neblina del valle en dos capas: delante del acueducto lejano y entre este y las cordilleras
+    for (const b of [
+      { x0: -120, x1: 260, y0: -22, y1: 3, z: -28, color: '#cdb4a6', alpha: 0.6, seed: 1 },
+      { x0: -260, x1: 420, y0: -30, y1: 14, z: -78, color: '#d6b9a7', alpha: 0.5, seed: 7 },
+    ]) {
+      const m = buildMistBand(b);
+      scene.add(m.mesh);
+      updaters.push((dt, t) => { m.mat.uniforms.time.value = t; });
     }
   }
 
@@ -256,6 +265,8 @@ export function buildLevel01(game, tex) {
     // pilares delanteros del pórtico (primer plano, translúcidos al tapar)
     foreground.push(fgPier(scene, mats, 28.5, y, 7.6, 2.6));
     foreground.push(fgPier(scene, mats, 41.5, y, 7.6, 2.6));
+    // fachada que oculta el nicho secreto hasta que Aren entra (se desvanece como el primer plano)
+    foreground.push(fgFacade(scene, mats, 41.8, 46.8, 3.95, 7.6, 1.05, 1.6));
     hangIvy(batch, mats, 20.6, 9.2, 1.45, 1.6, 1.3);
     hangIvy(batch, mats, 47.4, 9.2, 1.45, 2.2, 1.3);
   }
@@ -275,6 +286,16 @@ export function buildLevel01(game, tex) {
     // pilar arruinado que obliga a agarrarse
     kit.box(63, -3, 67.5, 4.0, -2.0, 1.4, mats.stoneWet, { radius: 0.06 });
     kit.platform(63, 67.5, 4.4, 3.9, -2.0, 1.45, mats.stone);
+    // pilastras, imposta y arco ciego: el pilar se lee como resto del acueducto, no como un bloque
+    // (todo dentro del ancho de colisión 63–67,5; solo sobresale hacia la cámara)
+    kit.box(63.0, -3, 63.5, 3.9, -2.05, 1.55, mats.stoneWet, { radius: 0.04 });
+    kit.box(67.0, -3, 67.5, 3.9, -2.05, 1.55, mats.stoneWet, { radius: 0.04 });
+    kit.box(63.0, 2.6, 67.5, 2.85, -2.1, 1.62, mats.stone, { radius: 0.03 });
+    kit.box(63.5, 0.25, 67.0, 0.45, -2.05, 1.5, mats.stone, { radius: 0.03 });
+    kit.arch(65.25, 1.2, 2.2, 1.42, 0.12, 0.22, mats.stone, { voussoirs: 9 });
+    kit.box(64.0, 0.45, 64.18, 1.2, 1.36, 1.5, mats.stone, { radius: 0.01 });
+    kit.box(66.32, 0.45, 66.5, 1.2, 1.36, 1.5, mats.stone, { radius: 0.01 });
+    kit.box(61.9, 1.6, 62.6, 1.95, -1.7, -0.9, mats.stone, { radius: 0.06 });   // sillar caído al pie
     hangIvy(batch, mats, 63.4, 4.3, 1.5, 2.2, 1.0);
     hangIvy(batch, mats, 67.0, 4.3, 1.5, 1.6, 0.8);
     // muro derrumbado (paso bajo para deslizarse)
@@ -519,6 +540,14 @@ function addShaft(scene, shafts, tex, x, y0, y1, width, z, strength = 1) {
   const g = new THREE.PlaneGeometry(width, len, 1, 1);
   g.translate(0, -len / 2, 0);
   const mat = new THREE.MeshBasicMaterial({ map: tex.shaft, color: new THREE.Color('#ffcf98').multiplyScalar(0.22 * strength), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+  // El haz se atenúa al cruzar por delante del plano de juego: ilumina el aire tras Aren sin velarlo.
+  mat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vWz;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvWz = (modelMatrix * vec4(transformed, 1.0)).z;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vWz;')
+      .replace('#include <opaque_fragment>', 'diffuseColor.a *= 1.0 - 0.8 * smoothstep(-1.2, 0.6, vWz);\n#include <opaque_fragment>');
+  };
+  mat.customProgramCacheKey = () => 'shaft-v1';
   for (let k = 0; k < 2; k++) {
     const m = new THREE.Mesh(g, mat);
     const yy = y0 + (y1 - y0) * (0.3 + k * 0.4);
@@ -616,6 +645,20 @@ function fgColumn(scene, mats, x, y, z, h) {
   g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   scene.add(g);
   return { group: g, mats: [mat], x0: x - 0.6, x1: x + 0.6, y0: y, y1: y + h, z };
+}
+
+function fgFacade(scene, mats, x0, x1, y0, y1, z0, z1) {
+  const mat = fgMat(mats.stoneInt);
+  const g = new THREE.Group();
+  const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0), mat);
+  m.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+  g.add(m);
+  // imposta y sillares sueltos para que no sea una caja lisa
+  const band = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0 + 0.1, 0.22, z1 - z0 + 0.12), mat);
+  band.position.set((x0 + x1) / 2, y0 + 0.11, (z0 + z1) / 2);
+  g.add(band);
+  scene.add(g);
+  return { group: g, mats: [mat], x0, x1, y0, y1, z: z1 };
 }
 
 function fgPier(scene, mats, x, y0, y1, z) {

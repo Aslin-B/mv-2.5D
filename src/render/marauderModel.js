@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { SdfScene, roundCone, ellipsoid, surfaceNets } from './sdf.js';
 import {
   defaultProportions, standardBody, assembleCharacter, buildHand, meshToGeometry, bindPositions,
-  lin, mixc, mulc, noise3, paintUniform, shellGeometry, makeCharMaterial, PATTERN,
+  lin, mixc, mulc, noise3, paintUniform, shellGeometry, makeCharMaterial, PATTERN, mergeRigidPieces,
 } from './humanoid.js';
 import { smoothstep } from '../core/math.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
@@ -15,10 +15,12 @@ import { cloneCharMaterial } from './charMaterial.js';
 
 const C = {
   skin: lin('#8f6a55'), skinDark: lin('#6e4f3f'),
-  hood: lin('#6f4a2e'), hoodDark: lin('#4a321f'), patch: lin('#545c4a'),
-  vest: lin('#38332d'), vestLight: lin('#4a433a'),
-  wrap: lin('#7d6f5a'), wrapDark: lin('#5c5244'),
-  trousers: lin('#433a32'), boot: lin('#352b23'),
+  // Identidad de amenaza: capucha y capa de rojo sangre de buey sobre cueros casi negros, para que
+  // la silueta se separe de la piedra ocre y del azul pizarra de Aren.
+  hood: lin('#6b211b'), hoodDark: lin('#3f1310'), patch: lin('#4a3a30'),
+  vest: lin('#211e1b'), vestLight: lin('#2f2a25'),
+  wrap: lin('#6e5f4c'), wrapDark: lin('#4d4337'),
+  trousers: lin('#2a2420'), boot: lin('#1f1915'),
   mask: lin('#2b2622'), rope: lin('#8a7552'),
 };
 
@@ -184,6 +186,7 @@ export function buildMarauder() {
   };
   for (const k of ['L', 'R']) capeAnchors[k] = capeAnchors[k].map((p) => new THREE.Vector3(p[0] - pos.chest[0], p[1] - pos.chest[1], p[2] - pos.chest[2]));
 
+  mergeRigidPieces(ch.root);
   return { root: ch.root, skinned: ch.skinned, bones, S, P, eyes: null, eyeMeshes: eyes, tail: null, sword: spear, capeAnchors, materials: collectMaterials(ch.root), triangles: tris };
 }
 

@@ -67,13 +67,24 @@ export function buildWater({ x0, x1, z0, z1, y, normalTex, foamXs = [] }) {
   return { mesh, mat };
 }
 
-// Cascada: plano vertical con vetas descendentes y borde irregular.
+// Cascada: lámina curvada en el labio superior, vetas finas a varias velocidades, huecos
+// translúcidos, espuma en la base y brillo especular en el borde del caño.
 export function buildWaterfall({ x, y0, y1, z, width }) {
-  const geo = new THREE.PlaneGeometry(width, y1 - y0, 1, 1);
+  const h = y1 - y0;
+  const geo = new THREE.PlaneGeometry(width, h, 6, 28);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const v = (pos.getY(i) + h / 2) / h;           // 0 abajo, 1 arriba
+    const lip = Math.max(0, (v - 0.86) / 0.14);     // el agua sale hacia delante en el labio
+    const belly = Math.sin(v * Math.PI) * 0.12;
+    pos.setZ(i, lip * lip * 0.55 + belly);
+    pos.setX(i, pos.getX(i) * (1 + (1 - v) * 0.12)); // se abre al caer
+  }
+  geo.computeVertexNormals();
   geo.translate(x, (y0 + y1) / 2, z);
   const mat = new THREE.ShaderMaterial({
-    transparent: true, depthWrite: false, fog: true,
-    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { time: { value: 0 } }]),
+    transparent: true, depthWrite: false, fog: true, side: THREE.DoubleSide,
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { time: { value: 0 }, height: { value: h }, width: { value: width } }]),
     vertexShader: /* glsl */ `
       #include <fog_pars_vertex>
       varying vec2 vUv;
@@ -82,16 +93,30 @@ export function buildWaterfall({ x, y0, y1, z, width }) {
       }`,
     fragmentShader: /* glsl */ `
       #include <fog_pars_fragment>
-      uniform float time; varying vec2 vUv;
+      uniform float time, height, width; varying vec2 vUv;
       float hh(vec2 p){ return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453); }
       float nn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(hh(i),hh(i+vec2(1,0)),f.x),mix(hh(i+vec2(0,1)),hh(i+vec2(1,1)),f.x),f.y); }
       void main(){
-        vec2 p = vec2(vUv.x * 14.0, vUv.y * 3.0 + time * 2.2);
-        float streak = nn(vec2(p.x, p.y)) * 0.6 + nn(vec2(p.x * 2.3, p.y * 2.0 + time)) * 0.4;
-        float edge = smoothstep(0.0, 0.12, vUv.x) * smoothstep(1.0, 0.88, vUv.x);
-        float a = edge * (0.35 + 0.55 * smoothstep(0.35, 0.8, streak));
-        a *= smoothstep(0.0, 0.08, vUv.y) * (0.6 + 0.4 * smoothstep(1.0, 0.7, vUv.y));
-        vec3 col = mix(vec3(0.55, 0.62, 0.66), vec3(1.25, 1.15, 1.05), streak);
+        // coordenadas en metros: vetas de ~6 cm de ancho alargadas en la caída
+        vec2 m = vec2(vUv.x * width, vUv.y * height);
+        float fall = time * 3.4;
+        float s1 = nn(vec2(m.x * 16.0, m.y * 0.55 + fall));
+        float s2 = nn(vec2(m.x * 31.0 + 7.0, m.y * 0.9 + fall * 1.35));
+        float s3 = nn(vec2(m.x * 6.0 + 3.0, m.y * 0.25 + fall * 0.7));
+        float streak = s1 * 0.45 + s2 * 0.35 + s3 * 0.2;
+        float edge = smoothstep(0.0, 0.16, vUv.x) * smoothstep(1.0, 0.84, vUv.x);
+        float sheet = smoothstep(0.32, 0.72, streak);
+        float a = edge * mix(0.12, 0.78, sheet);
+        // espuma en la base y labio brillante arriba
+        float foamH = clamp(1.6 / height, 0.02, 0.4);
+        float foam = smoothstep(foamH, 0.0, vUv.y) * (0.55 + 0.45 * nn(vec2(m.x * 9.0, m.y * 6.0 - fall * 0.4)));
+        float lip = smoothstep(0.9, 0.985, vUv.y) * edge;
+        a = max(a, edge * foam * 0.9);
+        a *= smoothstep(0.0, 0.015, vUv.y) * (1.0 - smoothstep(0.985, 1.0, vUv.y));
+        vec3 deep = vec3(0.32, 0.4, 0.42);
+        vec3 lit = vec3(0.92, 0.9, 0.84);
+        vec3 col = mix(deep, lit, sheet * 0.75 + foam * 0.6);
+        col += vec3(0.25, 0.23, 0.2) * lip;
         gl_FragColor = vec4(col, a);
         #include <fog_fragment>
       }`,

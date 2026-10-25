@@ -80,6 +80,18 @@ export class PostFX {
       ao.blendIntensity = 0.85;
       ao.updateGtaoMaterial({ radius: 0.55, distanceExponent: 1.6, thickness: 1.2, scale: 1.0, samples: 12 });
       ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
+      // El pase de normales de GTAO solo excluye puntos y líneas: los sprites, tarjetas aditivas,
+      // estelas y velos transparentes generaban recuadros oscuros. Se excluyen también.
+      ao._overrideVisibility = function () {
+        const cache = this._visibilityCache;
+        this.scene.traverse((o) => {
+          if (!o.visible) return;
+          const m = o.material;
+          const skip = o.isPoints || o.isLine || o.isLine2 || o.isSprite || o.userData.noAO ||
+            (m && !Array.isArray(m) && (m.transparent || m.depthWrite === false || m.blending === THREE.AdditiveBlending));
+          if (skip) { o.visible = false; cache.push(o); }
+        });
+      };
       composer.addPass(ao);
       this.ao = ao;
     }

@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 
-export async function openGame({ url = 'http://localhost:5173/', query = 'test=1&q=medio', width = 1280, height = 720 } = {}) {
+export async function openGame({ url = process.env.GAME_URL || 'http://localhost:5173/', query = 'test=1&q=medio', width = 1280, height = 720 } = {}) {
   const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const page = await browser.newPage({ viewport: { width, height } });
   const logs = [];

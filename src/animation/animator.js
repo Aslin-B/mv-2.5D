@@ -9,7 +9,7 @@ import { clamp, lerp, smoothstep, damp, springStep, DEG, easeInOutSine } from '.
 // - IK de piernas con ajuste de pelvis; IK del brazo de la espada siguiendo trayectorias de ataque.
 // - Capas: base de locomoción + superposición de torso + aditivos (respiración, inclinación, mirada).
 
-const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
+const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
 const _e = new THREE.Euler();
 const _m1 = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
@@ -149,7 +149,7 @@ export class Animator {
       const env = smoothstep(0, 0.15, t) * (1 - smoothstep(0.82, 1, t));
       accumulate(pose, this.POSE.roll, env);
       accumulate(pose, this.POSE.idle, 1 - env);
-      pose.hip[1] = lerp(-0.05, -0.32, env);
+      pose.hip[1] = lerp(-0.05, -0.6, env);
       this.rollAngle = easeInOutSine(clamp((t - 0.05) / 0.85, 0, 1)) * Math.PI * 2;
       carry = this.CARRY.roll;
     } else if (s.mode === 'backstep') {
@@ -236,6 +236,12 @@ export class Animator {
     hp.z += pose.hip[2];
     if (this.rollAngle) {
       _q.setFromAxisAngle(_v.set(1, 0, 0), this.rollAngle);
+      // girar alrededor del centro del ovillo (por encima y delante de la cadera), no de la
+      // articulación: la espalda rueda sobre el suelo y la cabeza queda recogida
+      const off = _v4.set(0, 0.2, 0.07);
+      const py = hp.y + off.y, pz = hp.z + off.z;
+      off.negate().applyQuaternion(_q);
+      hp.y = py + off.y; hp.z = pz + off.z;
       b.hips.quaternion.premultiply(_q);
     }
     this.root.updateMatrixWorld(true);

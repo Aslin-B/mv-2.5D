@@ -61,6 +61,14 @@ vec3 tpCol = texture2D(tpAlbedo, tpUvX).rgb * tpW.x + texture2D(tpAlbedo, tpUvY)
 // Variación a gran escala (evita la repetición evidente)
 float tpBig = tpNoise(vTpPos.xy * 0.35 + vTpPos.z * 0.2) * 0.6 + tpNoise(vTpPos.xy * 1.3) * 0.4;
 tpCol *= 0.82 + tpBig * 0.36;
+// Churretes de suciedad en paredes verticales: vetas alargadas que bajan desde cornisas y juntas
+{
+  float tpVert = 1.0 - smoothstep(0.35, 0.7, abs(tpN0.y));
+  float tpH = vTpPos.x * abs(tpN0.z) + vTpPos.z * abs(tpN0.x);
+  float tpSt = tpNoise(vec2(tpH * 5.0, vTpPos.y * 0.32)) * 0.6 + tpNoise(vec2(tpH * 14.0, vTpPos.y * 0.9)) * 0.4;
+  tpSt = smoothstep(0.5, 0.85, tpSt) * smoothstep(0.25, 0.7, tpNoise(vec2(tpH * 0.4, vTpPos.y * 0.15) + 3.0));
+  tpCol *= 1.0 - tpGrime * tpVert * tpSt * 0.6;
+}
 // Humedad
 float tpWet = (1.0 - smoothstep(tpWetLevel, tpWetLevel + tpWetBand, vTpPos.y)) * (0.7 + 0.3 * tpNoise(vTpPos.xz * 3.0));
 tpCol *= 1.0 - tpWet * 0.38;
@@ -92,7 +100,7 @@ float roughnessFactor = roughness;
   normal = normalize((viewMatrix * vec4(wn, 0.0)).xyz);
 }`);
   };
-  mat.customProgramCacheKey = () => 'triplanar-v1';
+  mat.customProgramCacheKey = () => 'triplanar-v2';
   return mat;
 }
 

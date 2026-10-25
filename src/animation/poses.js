@@ -113,10 +113,10 @@ export const POSE = {
     armL: [30, 0, 25], foreL: [-15, 0, 0], handL: [40, 0, 0],
   }),
   roll: makePose({
-    hip: [0, -0.3, 0], spine: [40, 0, 0], chest: [30, 0, 0], neck: [35, 0, 0], head: [20, 0, 0],
-    thighL: [-120, 0, 8], shinL: [140, 0, 0], footL: [30, 0, 0],
-    thighR: [-110, 0, -8], shinR: [140, 0, 0], footR: [30, 0, 0],
-    armL: [-60, 0, 10], foreL: [-100, 0, 0],
+    hip: [0, -0.3, 0], spine: [44, 0, 0], chest: [34, 0, 0], neck: [48, 0, 0], head: [28, 0, 0],
+    thighL: [-128, 0, 10], shinL: [146, 0, 0], footL: [34, 0, 0],
+    thighR: [-118, 0, -10], shinR: [146, 0, 0], footR: [34, 0, 0],
+    armL: [-50, 0, 18], foreL: [-110, 0, 0],
   }),
   backstep: makePose({
     hip: [0, -0.1, -0.05], spine: [-10, 0, 0], chest: [-6, 0, 0], neck: [8, 0, 0], head: [6, 0, 0],

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { SdfScene, roundCone, ellipsoid, roundBox, surfaceNets } from './sdf.js';
 import { makeCharMaterial, PATTERN } from './charMaterial.js';
 import { hash3, valueNoise3 } from '../core/rng.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // Esqueleto humanoide común. Espacio del modelo: pies en y=0, frente hacia +Z,
 // lado izquierdo del personaje hacia +X. Pose de enlace en "A" (brazos a ~22° del cuerpo).
@@ -337,3 +338,40 @@ export function attachRigid(bone, bindPos, geometry, material, { cast = true } =
 }
 
 export { PATTERN, makeCharMaterial };
+
+// Une las piezas rígidas que cuelgan directamente de un mismo hueso y comparten material y sombras:
+// menos llamadas de dibujo (biblia §11.4) con la misma imagen. Respeta las marcadas con noMerge.
+export function mergeRigidPieces(root) {
+  const bones = [];
+  root.traverse((o) => { if (o.isBone) bones.push(o); });
+  let before = 0, after = 0;
+  const keep = ['position', 'normal', 'color', 'surf'];
+  for (const bone of bones) {
+    const groups = new Map();
+    for (const c of bone.children) {
+      if (!c.isMesh || c.isSkinnedMesh || c.children.length || c.userData.noMerge) continue;
+      const key = `${c.material.uuid}|${c.castShadow}|${c.receiveShadow}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(c);
+    }
+    for (const list of groups.values()) {
+      before += list.length;
+      if (list.length < 2) { after += list.length; continue; }
+      const geos = list.map((m) => {
+        m.updateMatrix();
+        const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+        g.applyMatrix4(m.matrix);
+        for (const k of Object.keys(g.attributes)) if (!keep.includes(k)) g.deleteAttribute(k);
+        return g;
+      });
+      const merged = mergeGeometries(geos, false);
+      if (!merged) { after += list.length; continue; }
+      const mesh = new THREE.Mesh(merged, list[0].material);
+      mesh.castShadow = list[0].castShadow; mesh.receiveShadow = list[0].receiveShadow;
+      for (const m of list) bone.remove(m);
+      bone.add(mesh);
+      after++;
+    }
+  }
+  return { before, after };
+}

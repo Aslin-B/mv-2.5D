@@ -11,6 +11,7 @@ import { Animator } from '../animation/animator.js';
 import { buildHero } from '../render/heroModel.js';
 import { buildMarauder, cloneMarauder } from '../render/marauderModel.js';
 import { Cape } from '../render/cloth.js';
+import { CHAR_EDGE } from '../render/charMaterial.js';
 import { SwordTrail } from '../render/trail.js';
 import { Particles, Debris } from '../render/particles.js';
 import { buildSky, buildMountains, buildLights, updateSun } from '../render/environment.js';
@@ -136,6 +137,8 @@ export class Game {
     const tpl = buildMarauder();
     this.marauderTris = tpl.triangles;
     this.enemies = this.level.enemySpawns.map((s, i) => new Marauder(this, i === 0 ? tpl : cloneMarauder(tpl), s));
+    // contorno rojizo y apagado: amenaza legible sin parecer un efecto de interfaz
+    for (const e of this.enemies) for (const m of e.model.materials) m.userData.edgeTint.value.setRGB(1.25, 0.62, 0.48);
     this.stats.enemies = this.enemies.length;
 
     // Efectos
@@ -287,7 +290,7 @@ export class Game {
     E.on('heroDead', () => { this.deathTimer = 2.2; this.letterboxTarget = 0; });
     E.on('enemyAlert', (d) => A.play('alert', { pan: panX(d.who.x) }));
     E.on('enemyWindup', (d) => A.play('windup', { pan: panX(d.who.x) }));
-    E.on('enemyTell', (d) => { A.play('tell', { pan: panX(d.who.x) }); this.glint(d.tip, 0.45, 1.3); });
+    E.on('enemyTell', (d) => { A.play('tell', { pan: panX(d.who.x) }); this.glint(d.tip, 0.45, 0.95); });
     E.on('enemyDead', (d) => {
       A.play('enemyDead', { pan: panX(d.x) });
       this.slow(0.4, 0.35);
@@ -301,7 +304,7 @@ export class Game {
       this.flash = 0.22; this.post.final.uniforms.flashColor.value.set('#fff1d6');
       this.cameraShake(0.32);
       this.burst(this.fx.sparks, d.x, d.y, 34, [1.0, 0.78, 0.45], 6, 0.5);
-      this.glint(new THREE.Vector3(d.x, d.y, 0.3), 0.35, 2.2);
+      this.glint(new THREE.Vector3(d.x, d.y, 0.3), 0.3, 1.35);
       this.hud.toast('¡Parada precisa! Contraataca ahora', 1.6);
     });
     E.on('wallHit', (d) => { A.play('stone'); this.burst(this.fx.dust, d.x, d.y, 12, [0.7, 0.64, 0.55], 2); this.cameraShake(0.12); });
@@ -601,12 +604,18 @@ export class Game {
     r.toneMappingExposure = lerp(r.toneMappingExposure, z.exposure, k);
     L.sun.intensity = lerp(L.sun.intensity, z.sun, k);
     L.hemi.intensity = lerp(L.hemi.intensity, z.hemi, k);
-    L.fill.intensity = lerp(L.fill.intensity, z.fill, k);
+    this.fillBase = lerp(this.fillBase ?? z.fill, z.fill, k);
+    L.fill.intensity = this.fillBase;
     this.scene.fog.density = lerp(this.scene.fog.density, z.fogD, k);
     this.scene.fog.color.lerp(z.fog, k);
     this.scene.environmentIntensity = lerp(this.scene.environmentIntensity ?? 1, z.env, k);
     this.zoneBloom = lerp(this.zoneBloom ?? z.bloom, z.bloom, k);
     this.interior = clamp(1 - (z.hemi - 0.28) / 0.72, 0, 1);
+    // contorno de personajes: tono solar en exteriores, cálido de antorcha en interiores
+    const e = CHAR_EDGE.color.value;
+    this._edgeT = lerp(this._edgeT ?? z.rim, z.rim, k);
+    const w = clamp((this.interior - 0.3) / 0.5, 0, 1);
+    e.setRGB(lerp(1.0, 1.0, w), lerp(0.86, 0.66, w), lerp(0.72, 0.42, w)).multiplyScalar(this._edgeT);
   }
 
   // ---------------------------------------------------------------------------------
@@ -654,8 +663,13 @@ export class Game {
     const cam = this.camera.update(dt, focus, zone);
     this.applyZone(this.camera.x);
     updateSun(this.lights, { x: this.camera.x, y: this.camera.y - 1 });
-    // relleno cálido desde el lado de cámara para leer rostro y siluetas
-    this.lights.fill.position.set(hero.x + hero.facing * 1.4, hero.y + 2.3, 2.6);
+    // relleno cálido desde el lado de cámara para leer rostro y siluetas; en los planos cortos se
+    // convierte en luz principal de retrato (lateral, alta, por delante del rostro)
+    const cw = this.camera.cineW;
+    this.heroModel.setDetail(cw > 0.2);
+    const L = this.lights.fill;
+    L.position.set(hero.x + hero.facing * lerp(1.4, 0.75, cw), hero.y + lerp(2.3, 2.05, cw), lerp(2.6, 1.25, cw));
+    L.intensity = this.fillBase * (1 + cw * 0.6);
     const t = this.simTime;
     this.level.update(dt, t);
     this.sky.material.uniforms.time.value = t;
@@ -702,7 +716,7 @@ export class Game {
       const px0 = cx + (f.x0 - cx) * k, px1 = cx + (f.x1 - cx) * k;
       const py0 = cy + (f.y0 - cy) * k, py1 = cy + (f.y1 - cy) * k;
       const hit = hero.x + 0.35 > px0 && hero.x - 0.35 < px1 && hero.y + 1.8 > py0 && hero.y < py1;
-      for (const m of f.mats) m.opacity = damp(m.opacity, hit ? 0.22 : 1, 0.08, 1 / 60);
+      for (const m of f.mats) m.opacity = damp(m.opacity, hit ? 0.1 : 1, 0.08, 1 / 60);
     }
   }
 
@@ -722,8 +736,88 @@ export class Game {
       game: g,
       start() { g.screens.hide(); g.start(); g.camera.cine = null; g.camera.cineW = 0; g.cineTimer = 0; g.fade = 0; g.fadeTarget = 0; },
       setInput(v) { g.input.virtual = v || {}; },
-      step(n = 1) { for (let i = 0; i < n; i++) g.step(); },
-      render() { g.render(1 / 60); },
+      step(n = 1) { for (let i = 0; i < n; i++) { g.step(); g.hud.update(1 / 60); } },
+      render(dt = 1 / 60) { g.render(dt); },
+      // Métricas para el juez de calidad: luminancia de la imagen final y separación del héroe
+      // y de los enemigos respecto al fondo, mediante una máscara renderizada aparte.
+      measure(W = 320, H = 180) {
+        const r = g.renderer, cam = g.camera.cam, scene = g.scene;
+        g.render(1 / 60);
+        const c2 = document.createElement('canvas'); c2.width = W; c2.height = H;
+        const ctx = c2.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(r.domElement, 0, 0, W, H);
+        const img = ctx.getImageData(0, 0, W, H).data;
+        const mask = (objs) => {
+          const LAYER = 7;
+          for (const o of objs) o.traverse((q) => q.layers.enable(LAYER));
+          const rt = new THREE.WebGLRenderTarget(W, H);
+          const prev = { bg: scene.background, fog: scene.fog, ov: scene.overrideMaterial, mask: cam.layers.mask, cc: r.getClearColor(new THREE.Color()), ca: r.getClearAlpha() };
+          const white = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+          scene.background = new THREE.Color(0); scene.fog = null; scene.overrideMaterial = white;
+          cam.layers.set(LAYER);
+          r.setRenderTarget(rt); r.setClearColor(0, 1); r.clear(); r.render(scene, cam); r.setRenderTarget(null);
+          const px = new Uint8Array(W * H * 4);
+          r.readRenderTargetPixels(rt, 0, 0, W, H, px);
+          scene.background = prev.bg; scene.fog = prev.fog; scene.overrideMaterial = prev.ov; cam.layers.mask = prev.mask; r.setClearColor(prev.cc, prev.ca);
+          for (const o of objs) o.traverse((q) => q.layers.disable(LAYER));
+          rt.dispose(); white.dispose();
+          const m = new Uint8Array(W * H);
+          for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) m[(H - 1 - y) * W + x] = px[(y * W + x) * 4] > 127 ? 1 : 0;
+          return m;
+        };
+        const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+        const Lstar = (i) => { const Y = 0.2126 * lin(img[i]) + 0.7152 * lin(img[i + 1]) + 0.0722 * lin(img[i + 2]); return Y > 0.008856 ? 116 * Math.cbrt(Y) - 16 : 903.3 * Y; };
+        const L = new Float32Array(W * H);
+        let clip = 0, crush = 0, sat = 0;
+        for (let k = 0; k < W * H; k++) {
+          const i = k * 4; L[k] = Lstar(i);
+          if (img[i] >= 250 || img[i + 1] >= 250 || img[i + 2] >= 250) clip++;
+          if (L[k] < 3) crush++;
+          const mx = Math.max(img[i], img[i + 1], img[i + 2]), mn = Math.min(img[i], img[i + 1], img[i + 2]);
+          sat += mx > 0 ? (mx - mn) / mx : 0;
+        }
+        const sorted = Array.from(L).sort((a, b) => a - b);
+        const pct = (q) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
+        const sep = (m) => {
+          // contraste local en el borde: para cada píxel del contorno interior, diferencia absoluta
+          // de L* frente a la media de los píxeles de fondo de su vecindario 5×5
+          let area = 0, bodyS = 0, edgeS = 0, edgeN = 0, inS = 0, outS = 0;
+          for (let y = 2; y < H - 2; y++) for (let x = 2; x < W - 2; x++) {
+            const k = y * W + x;
+            if (!m[k]) continue;
+            area++; bodyS += L[k];
+            let o = 0, on = 0;
+            for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const q = k + dy * W + dx; if (!m[q]) { o += L[q]; on++; } }
+            if (on) { const om = o / on; edgeS += Math.abs(L[k] - om); inS += L[k]; outS += om; edgeN++; }
+          }
+          if (!area) return null;
+          const n = Math.max(1, edgeN);
+          return { area: area / (W * H), edgeIn: +(inS / n).toFixed(1), edgeOut: +(outS / n).toFixed(1), edgeDelta: +(edgeS / n).toFixed(1), body: +(bodyS / area).toFixed(1) };
+        };
+        const heroObjs = [g.heroModel.root, ...g.heroCape.panels.map((p) => p.mesh)];
+        const hero = sep(mask(heroObjs));
+        const enemies = g.enemies.filter((e) => e.alive && Math.abs(e.x - g.camera.x) < 9).map((e) => sep(mask([e.model.root, ...e.cape.panels.map((p) => p.mesh)]))).filter(Boolean);
+        // llamadas de dibujo de la escena (sin pases de posproceso) y del cuadro completo
+        r.info.autoReset = false;
+        r.info.reset();
+        const rt2 = new THREE.WebGLRenderTarget(64, 36); r.setRenderTarget(rt2); r.render(scene, cam); r.setRenderTarget(null); rt2.dispose();
+        const sceneCalls = r.info.render.calls, sceneTris = r.info.render.triangles;
+        // solo el pase principal (sin mapa de sombras)
+        r.info.reset();
+        const au = r.shadowMap.autoUpdate; r.shadowMap.autoUpdate = false; r.shadowMap.needsUpdate = false;
+        const rt3 = new THREE.WebGLRenderTarget(64, 36); r.setRenderTarget(rt3); r.render(scene, cam); r.setRenderTarget(null); rt3.dispose();
+        r.shadowMap.autoUpdate = au;
+        const mainCalls = r.info.render.calls, mainTris = r.info.render.triangles;
+        r.info.reset();
+        g.render(1 / 60);
+        const frameCalls = r.info.render.calls;
+        r.info.autoReset = true;
+        return {
+          luma: { mean: +(L.reduce((a, b) => a + b, 0) / L.length).toFixed(1), p5: +pct(0.05).toFixed(1), p50: +pct(0.5).toFixed(1), p95: +pct(0.95).toFixed(1), clipPct: +(100 * clip / (W * H)).toFixed(2), crushPct: +(100 * crush / (W * H)).toFixed(2), sat: +(sat / (W * H)).toFixed(3) },
+          hero, enemies, sceneCalls, sceneTris, mainCalls, mainTris, frameCalls,
+        };
+      },
+      simCost(n = 120) { const t0 = performance.now(); for (let i = 0; i < n; i++) g.step(); return (performance.now() - t0) / n; },
       settle() {
         const h = g.hero;
         const zone = sampleCameraZone(CAMERA_ZONES, h.x);
@@ -732,6 +826,8 @@ export class Game {
         g.camera.x = clamp(h.x + g.camera.lead, zone.minX, zone.maxX);
         g.applyZone(g.camera.x, true);
         g.fade = g.fadeTarget; g.letterbox = g.letterboxTarget;
+        g.camera.update(0, h, zone);
+        for (let i = 0; i < 90; i++) g.fadeForeground(g.camera.cam);
       },
       cine(on) { if (!on) { g.camera.cine = null; g.camera.cineW = 0; } else g.camera.cineW = 1; },
       teleport(x, y, facing = 1) {
@@ -751,7 +847,7 @@ export class Game {
           stats: { ...g.stats, parries: h.stats.parries, hits: h.stats.hits }, simTime: g.simTime, state: g.state,
         };
       },
-      info() { const i = g.renderer.info; return { calls: i.render.calls, triangles: i.render.triangles, buildMs: g.buildMs, heroTris: g.heroModel.triangles, marauderTris: g.marauderTris }; },
+      info() { const i = g.renderer.info; return { calls: i.render.calls, triangles: i.render.triangles, buildMs: g.buildMs, heroTris: g.heroModel.triangles, heroTrisHi: g.heroModel.trianglesHi, heroBreakdown: g.heroModel.breakdown, marauderTris: g.marauderTris }; },
       TUNING,
     };
   }

@@ -59,27 +59,50 @@ export function buildMountains() {
     { z: -150, base: -30, amp: 42, freq: 0.014, color: '#7f7886', top: '#c09584', seed: 3 },
     { z: -90, base: -25, amp: 22, freq: 0.03, color: '#635f69', top: '#9a7a6c', seed: 4 },
   ];
+  // Cada capa es una banda con varias filas: la arista recibe luz rasante del sol (contraluz),
+  // las laderas orientadas al sol se aclaran, las cárcavas verticales rompen la superficie y la
+  // base se funde con la neblina del valle (perspectiva aérea).
+  const ROWS = 7;
   for (const L of layers) {
     const pos = [], col = [], idx = [];
     const x0 = -500, x1 = 700, n = 900;
     const ct = new THREE.Color(L.top), cb = new THREE.Color(L.color), haze = new THREE.Color('#b8a2a0');
-    for (let i = 0; i <= n; i++) {
-      const x = x0 + ((x1 - x0) * i) / n;
+    const shade = cb.clone().multiplyScalar(0.78).lerp(new THREE.Color('#5a5a78'), 0.18);
+    const heightAt = (x) => {
       const r = fbm2(x * L.freq, L.seed * 10, 6, 1e6, L.seed);
       const ridge = 1 - Math.abs(r * 2 - 1);
       const detail = (fbm2(x * L.freq * 9, L.seed * 3, 3, 1e6, L.seed + 7) - 0.5) * 0.12;
-      const y = L.base + 12 + L.amp * (0.25 + 0.75 * Math.pow(ridge, 1.6) + detail);
-      pos.push(x, y, L.z, x, L.base, L.z);
-      const lit = 0.55 + 0.45 * Math.max(0, fbm2(x * L.freq * 3, 2, 3, 1e6, L.seed + 5));
-      const top = cb.clone().lerp(ct, lit * 0.6);
-      col.push(top.r, top.g, top.b, haze.r, haze.g, haze.b);
-      if (i < n) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+      return L.base + 12 + L.amp * (0.25 + 0.75 * Math.pow(ridge, 1.6) + detail);
+    };
+    const c = new THREE.Color();
+    for (let i = 0; i <= n; i++) {
+      const x = x0 + ((x1 - x0) * i) / n;
+      const dx = (x1 - x0) / n;
+      const yTop = heightAt(x);
+      const slope = (heightAt(x + dx) - heightAt(x - dx)) / (2 * dx);
+      const toSun = Math.min(1, Math.max(0, -slope * 1.4 + 0.15));
+      const gully = fbm2(x * L.freq * 38, L.seed * 5, 3, 1e6, L.seed + 11) - 0.5;
+      for (let j = 0; j <= ROWS; j++) {
+        const v = j / ROWS;
+        const y = lerp(yTop, L.base, Math.pow(v, 1.25));
+        const rim = j === 0 ? 1 : 0;
+        const lit = toSun * (1 - v) * 0.75 + rim * (0.35 + 0.5 * toSun);
+        c.copy(shade).lerp(ct, Math.min(1, lit));
+        c.multiplyScalar(1 + gully * 0.5 * Math.sin(Math.PI * Math.min(1, v * 1.6)));
+        c.lerp(haze, Math.pow(v, 0.9) * 0.85);
+        pos.push(x, y, L.z);
+        col.push(c.r, c.g, c.b);
+        if (i < n && j < ROWS) {
+          const a = i * (ROWS + 1) + j, b = a + ROWS + 1;
+          idx.push(a, a + 1, b, a + 1, b + 1, b);
+        }
+      }
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     g.setIndex(idx);
-    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false }));
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide }));
     m.renderOrder = -5;
     group.add(m);
   }
@@ -132,4 +155,32 @@ export class Zones {
     out.fog = new THREE.Color(a.fogColor).lerp(new THREE.Color(b.fogColor), t);
     return out;
   }
+}
+
+// Banda de neblina del valle: plano vertical con degradado (denso abajo) y deriva lenta. Separa
+// las capas de fondo (plano de juego, acueducto lejano, cordilleras) como perspectiva aérea.
+export function buildMistBand({ x0, x1, y0, y1, z, color = '#c9b2a6', alpha = 0.5, seed = 0 }) {
+  const geo = new THREE.PlaneGeometry(x1 - x0, y1 - y0, 1, 1);
+  geo.translate((x0 + x1) / 2, (y0 + y1) / 2, z);
+  const mat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, fog: false,
+    uniforms: { time: { value: 0 }, color: { value: new THREE.Color(color) }, alpha: { value: alpha }, seed: { value: seed }, width: { value: x1 - x0 } },
+    vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: /* glsl */ `
+      uniform float time, alpha, seed, width; uniform vec3 color; varying vec2 vUv;
+      float hh(vec2 p){ return fract(sin(dot(p, vec2(41.3, 289.1)) + seed) * 43758.5453); }
+      float nn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(hh(i),hh(i+vec2(1,0)),f.x),mix(hh(i+vec2(0,1)),hh(i+vec2(1,1)),f.x),f.y); }
+      void main(){
+        vec2 p = vec2(vUv.x * width * 0.035 + time * 0.012, vUv.y * 2.2);
+        float n = nn(p) * 0.55 + nn(p * 2.7 + vec2(time * 0.02, 0.0)) * 0.3 + nn(p * 7.0) * 0.15;
+        float g = pow(1.0 - vUv.y, 1.6);
+        float a = alpha * g * smoothstep(0.15, 0.75, n + g * 0.35);
+        a *= smoothstep(0.0, 0.04, vUv.x) * smoothstep(1.0, 0.96, vUv.x);
+        gl_FragColor = vec4(color, a);
+      }`,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.renderOrder = -2;
+  mesh.userData.noAO = true;
+  return { mesh, mat };
 }

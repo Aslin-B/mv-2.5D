@@ -4,7 +4,7 @@ import * as THREE from 'three';
 // Catmull-Rom. Es un efecto visual; el daño se calcula con el barrido real de la hoja (§14.3).
 
 export class SwordTrail {
-  constructor(scene, { samples = 12, sub = 4, color = '#ffe6c2' } = {}) {
+  constructor(scene, { samples = 9, sub = 4, color = '#ffe2bd' } = {}) {
     this.samples = samples;
     this.sub = sub;
     this.hist = [];
@@ -20,7 +20,7 @@ export class SwordTrail {
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
       uniforms: { color: { value: new THREE.Color(color) }, intensity: { value: 0 } },
       vertexShader: `attribute float alpha; varying float vA; void main(){ vA = alpha; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-      fragmentShader: `uniform vec3 color; uniform float intensity; varying float vA; void main(){ gl_FragColor = vec4(color * intensity * 1.6, vA * intensity); }`,
+      fragmentShader: `uniform vec3 color; uniform float intensity; varying float vA; void main(){ gl_FragColor = vec4(color * 0.95, vA * intensity); }`,
     });
     this.mesh = new THREE.Mesh(geo, this.mat);
     this.mesh.frustumCulled = false;
@@ -30,7 +30,8 @@ export class SwordTrail {
   }
 
   push(base, tip, active) {
-    this.hist.unshift([base.clone(), tip.clone()]);
+    // solo el tercio exterior de la hoja deja estela: un arco fino, no un abanico
+    this.hist.unshift([base.clone().lerp(tip, 0.6), tip.clone()]);
     if (this.hist.length > this.samples) this.hist.pop();
     const target = active ? 1 : 0;
     this.intensity += (target - this.intensity) * (active ? 0.6 : 0.25);
@@ -51,8 +52,8 @@ export class SwordTrail {
           P[(w * 2 + k) * 3] = tmp.x; P[(w * 2 + k) * 3 + 1] = tmp.y; P[(w * 2 + k) * 3 + 2] = tmp.z;
         }
         const f = 1 - (i + t) / (Math.min(H.length, this.samples) - 1);
-        A[w * 2] = Math.max(0, f) * 0.15;
-        A[w * 2 + 1] = Math.max(0, f) ** 1.5 * 0.85;
+        A[w * 2] = 0;
+        A[w * 2 + 1] = Math.max(0, f) ** 1.6 * 0.45;
         w++;
       }
     }
