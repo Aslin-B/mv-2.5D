@@ -1,16 +1,21 @@
 import * as THREE from 'three';
 import { segAABB, expand } from '../core/geom2d.js';
+import { EclipseOrb } from '../render/eclipseOrb.js';
 
-// Proyectiles arcanos (saetas de éter del hechicero y orbes enemigos).
+// Proyectiles arcanos (dardos y orbes del eclipse del mago, contraconjuro y orbes enemigos).
 // Simulación en el plano de juego dentro del paso fijo: barrido de segmento contra cajas de daño,
 // mecanismos y sólidos (los suelos de un solo sentido se atraviesan). El aspecto (núcleo blanco,
 // halo de color, estela de partículas y luz puntual) se dibuja aparte y nunca decide el impacto.
 
+// orb: radio visual de la esfera del eclipse (núcleo de obsidiana con estela de sombras) en lugar
+// de la cápsula luminosa; pierce: atraviesa enemigos hasta derribar uno.
 const KINDS = {
-  bolt: { len: 0.7, wid: 0.12, glow: 0.62, color: [0.45, 2.3, 3.0], core: 2.6, light: 2.6, sparks: 10, heavy: false, radius: 0.08 },
-  charged: { len: 1.25, wid: 0.36, glow: 1.5, color: [0.65, 2.5, 3.3], core: 3.2, light: 7, sparks: 34, heavy: true, radius: 0.22 },
-  counter: { len: 1.7, wid: 0.4, glow: 1.7, color: [3.2, 2.2, 0.75], core: 3.4, light: 8, sparks: 44, heavy: true, radius: 0.24 },
-  orb: { len: 0.42, wid: 0.42, glow: 1.0, color: [2.8, 0.55, 1.7], core: 2.2, light: 3, sparks: 14, heavy: false, radius: 0.16 },
+  bolt: { len: 0.72, wid: 0.11, glow: 0.5, color: [1.25, 0.5, 2.7], core: 1.9, light: 2.2, sparks: 10, heavy: false, radius: 0.08 },
+  seed: { orb: 0.06, len: 0.5, wid: 0.16, glow: 0.42, color: [1.1, 0.45, 2.4], core: 1.4, light: 2.4, sparks: 16, heavy: false, radius: 0.1 },
+  condense: { orb: 0.105, len: 0.7, wid: 0.26, glow: 0.75, color: [1.2, 0.5, 2.6], core: 1.6, light: 4.2, sparks: 28, heavy: true, radius: 0.17 },
+  eclipse: { orb: 0.17, len: 1.0, wid: 0.4, glow: 1.15, color: [1.35, 0.6, 2.9], core: 1.8, light: 6.5, sparks: 46, heavy: true, radius: 0.27, pierce: true },
+  counter: { len: 1.7, wid: 0.4, glow: 1.7, color: [3.2, 2.2, 0.75], core: 3.4, light: 8, sparks: 44, heavy: true, radius: 0.24, pierce: true },
+  orb: { len: 0.42, wid: 0.42, glow: 1.0, color: [3.0, 0.85, 0.35], core: 2.2, light: 3, sparks: 14, heavy: false, radius: 0.16 },
 };
 export const BOLT_KINDS = KINDS;
 
@@ -60,14 +65,20 @@ export class Projectiles {
       scene.add(L);
       this.lights.push(L);
     }
+    // esferas del eclipse en vuelo (sin luz propia: usan las luces compartidas de arriba)
+    this.orbs = [];
+    for (let i = 0; i < 3; i++) this.orbs.push({ orb: new EclipseOrb(scene, { dot: game.tex.dot, light: false }), used: false });
     this._c = new THREE.Color();
+    this._p = new THREE.Vector3(); this._v = new THREE.Vector3();
   }
 
   fire({ x, y, dx, dy, kind = 'bolt', speed = 26, damage = 10, life = 0.8, owner = 'hero', source = null }) {
     const K = KINDS[kind];
     const vis = this.pool.find((p) => !p.used);
     if (vis) vis.used = true;
-    const p = { x, y, px: x, py: y, vx: dx * speed, vy: dy * speed, kind, K, damage, life, age: 0, owner, source, vis, hits: new Set(), alive: true, z: 0.25 };
+    let ov = null;
+    if (K.orb) { ov = this.orbs.find((o) => !o.used) || null; if (ov) { ov.used = true; ov.orb.hide(); } }
+    const p = { x, y, px: x, py: y, vx: dx * speed, vy: dy * speed, kind, K, damage, life, age: 0, owner, source, vis, ov, hits: new Set(), alive: true, z: 0.25 };
     this.list.push(p);
     this.flash(x, y, K.color, K.light * 0.9, 0.07);
     return p;
@@ -84,6 +95,7 @@ export class Projectiles {
   }
 
   release(p) {
+    if (p.ov) { p.ov.orb.hide(); p.ov.used = false; p.ov = null; }
     if (!p.vis) return;
     p.vis.used = false;
     p.vis.outer.visible = p.vis.inner.visible = p.vis.glow.visible = false;
@@ -119,7 +131,7 @@ export class Projectiles {
           p.hits.add(e);
           const res = e.takeHit(p.damage, p.px, { heavy: p.K.heavy, light: !p.K.heavy, ranged: true });
           g.onBoltHitEnemy(p, e, res);
-          if (p.kind !== 'counter' || res === 'dead') { this.impact(p, Math.min(Math.max(p.x, box.x0), box.x1), p.y, 'enemy'); break; }
+          if (!p.K.pierce || res === 'dead') { this.impact(p, Math.min(Math.max(p.x, box.x0), box.x1), p.y, 'enemy'); break; }
         }
         if (!p.alive) continue;
         for (const m of g.level.mechanisms) {
@@ -177,6 +189,13 @@ export class Projectiles {
       if (!v) continue;
       const K = p.K;
       const ang = Math.atan2(p.vy, p.vx);
+      if (p.ov) {
+        // esfera de obsidiana con estela de sombras; la cápsula queda como halo tenue detrás
+        const o = p.ov.orb;
+        const grow = Math.min(1, 0.6 + p.age / 0.08 * 0.4);
+        o.fly(this._p.set(p.x, p.y, p.z), this._v.set(p.vx, p.vy, 0), K.orb * grow, 1, dt, Math.min(1, p.age / 0.3));
+        o.render(g.camera.cam, dt);
+      }
       const grow = Math.min(1, p.age / 0.05);
       const pulse = 1 + 0.12 * Math.sin(t * 40 + p.x);
       const len = K.len * (0.5 + 0.5 * grow);
@@ -193,6 +212,7 @@ export class Projectiles {
       v.glow.scale.setScalar(K.glow * pulse);
       v.glow.material.color.setRGB(K.color[0] * 0.35, K.color[1] * 0.35, K.color[2] * 0.35);
       v.outer.visible = v.inner.visible = v.glow.visible = true;
+      if (p.ov) { v.inner.visible = false; v.outer.material.color.multiplyScalar(0.5); }
       // estela de motas
       const n = K.heavy ? 3 : 1;
       for (let i = 0; i < n; i++) {

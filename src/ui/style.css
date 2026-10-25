@@ -21,13 +21,16 @@ body { font-family: var(--sans); color: var(--ink); -webkit-font-smoothing: anti
 .st-sigil svg { width: 34px; height: 34px; }
 .st-body { display: flex; flex-direction: column; gap: 5px; justify-content: center; }
 .st-row { display: flex; align-items: center; gap: 8px; }
-.st-lab { font: 600 10px/1 var(--sans); letter-spacing: .18em; color: #cdb27a; width: 36px; }
+.st-lab { font: 600 10px/1 var(--sans); letter-spacing: .16em; color: #cdb27a; width: 56px; }
 .st-num { font: 700 20px/1 var(--serif); color: #f3ead6; min-width: 26px; text-shadow: 0 0 8px rgba(120,230,255,.35); }
 .st-num.low { color: #ff8a6a; animation: lowpulse 1s infinite; }
 @keyframes lowpulse { 50% { opacity: .55; } }
-.st-ether { position: relative; width: 168px; height: 8px; background: rgba(4,8,12,.9); border: 1px solid rgba(110,210,235,.45); transform: skewX(-24deg); overflow: hidden; }
-.st-ether i { position: absolute; inset: 0; background: linear-gradient(90deg, #1aa6cf, #8ff3ff 85%, #ffffff); transform-origin: left center; transform: scaleX(0.02); box-shadow: 0 0 10px rgba(120,235,255,.7); }
-.st-ether.full { border-color: #bff9ff; box-shadow: 0 0 12px rgba(140,240,255,.75); animation: etherfull .25s infinite alternate; }
+.st-ether { position: relative; width: 168px; height: 8px; background: rgba(8,5,12,.9); border: 1px solid rgba(178,150,230,.45); transform: skewX(-24deg); overflow: hidden; }
+.st-ether i { position: absolute; inset: 0; background: linear-gradient(90deg, #3b1d6e, #8b5fe0 70%, #e6dcff); transform-origin: left center; transform: scaleX(0.02); box-shadow: 0 0 10px rgba(160,110,255,.65); }
+/* muescas de fase del eclipse: semilla (0,3 s), condensación (1,5 s) */
+.st-ether b { position: absolute; top: 0; bottom: 0; width: 2px; background: rgba(214,206,232,.55); z-index: 1; }
+.st-ether.p1 b.n1, .st-ether.p2 b.n2 { background: #f1ecff; box-shadow: 0 0 6px #c9a8ff; }
+.st-ether.full { border-color: #e1d4ff; box-shadow: 0 0 12px rgba(170,120,255,.75); animation: etherfull .55s infinite alternate; }
 @keyframes etherfull { to { filter: brightness(1.45); } }
 .hp { display: flex; gap: 3px; }
 .vessel { width: 14px; height: 18px; display: inline-block; transition: transform .2s; }

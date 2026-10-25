@@ -91,19 +91,38 @@ const S = () => g.state();
   const s = await S();
   check('Caída al agua devuelve a suelo seguro', s.y > 1.5 && s.x < 55 && s.hp === s.maxHp, `x=${s.x.toFixed(2)} y=${s.y.toFixed(2)} vida=${s.hp}`);
 }
-// T9 combate a distancia: saetas de éter (J) y saeta cargada (mantener J)
+// T9a fases del «Eclipse de sombras»: semilla 0,3 s, condensación 1,5 s, eclipse 3 s; al soltar se
+// lanza el orbe de la fase alcanzada (sin enemigos cerca)
+{
+  await g.teleport(4, 0, 1);
+  await g.input({ attack: true });
+  const at = {};
+  let maxCharge = 0;
+  for (let i = 1; i <= 190; i++) {
+    await g.step(1);
+    const h = await g.eval(() => { const H = window.__game.game.hero; return { phase: H.phase, charge: H.charge }; });
+    if (at[h.phase] == null) at[h.phase] = i;
+    maxCharge = Math.max(maxCharge, h.charge);
+  }
+  await g.input({});
+  await g.step(1);
+  const kinds = await g.eval(() => window.__game.game.projectiles.list.filter((p) => p.owner === 'hero').map((p) => `${p.kind}:${p.damage}`));
+  const okT = Math.abs(at[1] - 18) <= 1 && Math.abs(at[2] - 90) <= 1 && Math.abs(at[3] - 180) <= 1;
+  check('Eclipse: fases a 0,3 / 1,5 / 3 s y lanzamiento al soltar', okT && maxCharge >= 0.99 && kinds.includes('eclipse:60'), `pasos semilla=${at[1]} condensación=${at[2]} eclipse=${at[3]} carga=${maxCharge.toFixed(2)} orbes=${kinds.join(' ')}`);
+  await g.step(60);
+}
+// T9 combate a distancia: dardos de sombra (J) y orbe condensado (mantener J ~1,6 s)
 {
   // el saqueador vuelve a su puesto (las pruebas del canal lo despiertan a distancia)
   await g.eval(() => { const G = window.__game.game; G.resetEnemy(G.enemies[0]); });
   await g.teleport(33.0, 1.6, 1);
-  // carga: mantener ~1 s y soltar (antes de que el saqueador se acerque)
   const hp0 = (await S()).enemies[0].hp;
-  let maxCharge = 0;
+  let maxPhase = 0;
   await g.input({ attack: true });
-  for (let i = 0; i < 64; i++) { await g.step(1); maxCharge = Math.max(maxCharge, (await S()).charge); }
+  for (let i = 0; i < 98; i++) { await g.step(1); maxPhase = Math.max(maxPhase, await g.eval(() => window.__game.game.hero.phase)); }
   await g.run({}, 24);
   let s = await S();
-  check('Saeta cargada: carga completa y daño pesado', maxCharge >= 0.99 && hp0 - s.enemies[0].hp >= 35, `carga máx=${maxCharge.toFixed(2)} vida ${hp0}→${s.enemies[0].hp}`);
+  check('Orbe condensado: daño pesado a distancia', maxPhase === 2 && hp0 - s.enemies[0].hp >= 35, `fase máx=${maxPhase} vida ${hp0}→${s.enemies[0].hp}`);
   const hpA = s.enemies[0].hp;
   const shots0 = s.stats.shots || 0;
   for (let k = 0; k < 4; k++) { await g.run({ attack: true }, 1); await g.run({}, 10); }

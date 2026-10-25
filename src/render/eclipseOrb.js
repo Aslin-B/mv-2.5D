@@ -209,7 +209,7 @@ export class EclipseOrb {
     if (s.cast && s.cast.launch != null) {
       const L = s.cast.launch;
       const dir = new THREE.Vector3(s.aim.x, s.aim.y, 0).normalize();
-      this.fly(target.addScaledVector(dir, L * 9), dir.multiplyScalar(9), r * 0.85, 1, dt);
+      this.fly(target.addScaledVector(dir, L * 9), dir.multiplyScalar(9), r * 0.85, 1, dt, Math.min(1, L / 0.3));
       return;
     }
     this.flying = false;
@@ -223,8 +223,10 @@ export class EclipseOrb {
     this.time += dt;
   }
 
-  fly(pos, vel, radius, power, dt) {
+  // trail 0..1: la estela crece en los primeros instantes del vuelo (no atraviesa al lanzador)
+  fly(pos, vel, radius, power, dt, trail = 1) {
     this.flying = true;
+    this.trail = trail;
     this.center.copy(pos);
     this.vel.copy(vel);
     this.radius = radius; this.power = power; this.pulse = 0.2;
@@ -269,7 +271,7 @@ export class EclipseOrb {
           p.y += Math.sin(T * 1.7 + k + s * 4) * r * 0.25 * (1 - s);
         } else {
           // estela: hilos que se enroscan detrás del proyectil
-          const back = (1 - s) * (0.55 + r * 7) * R.len;
+          const back = (1 - s) * (0.55 + r * 7) * R.len * (this.trail ?? 1);
           const th = R.ph + T * 9 + (1 - s) * 5;
           const rho = r * (0.75 + 1.1 * (1 - s));
           const ax = dirF;

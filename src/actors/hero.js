@@ -5,8 +5,10 @@ import { clamp, approach, sign } from '../core/math.js';
 
 // Controlador de Aren: velocidad, colisiones, estados físicos y combate (biblia §12, §14, §20.2).
 // La física decide dónde está el personaje; el animador explica cómo llegó allí.
-// Hechicero (iteración 4): saetas de éter con carga, apuntado en 8 direcciones (libre con Shift),
-// golpe de éter que desvía estocadas y abre un contraconjuro, y paso etéreo con invulnerabilidad.
+// Mago de sombras (iteración 7): dardo de sombra al pulsar y «Eclipse de sombras» al mantener, en
+// cuatro fases (semilla 0,3 s, condensación 1,5 s, eclipse 3 s y lanzamiento al soltar), apuntado
+// en 8 direcciones (libre con Shift), golpe de éter que desvía estocadas y abre un contraconjuro, y
+// paso etéreo con invulnerabilidad.
 
 export const TUNING = {
   w: 0.48, h: 1.72, hLow: 0.88,
@@ -22,9 +24,13 @@ export const TUNING = {
   parryWindow: 0.16,
   // poderes
   dashDur: 0.2, dashSpeed: 12.5, dashIframes: 0.17, dashCooldown: 0.3,
-  shotCd: 0.14, chargeDelay: 0.24, chargeTime: 0.72,
+  shotCd: 0.14,
+  // fases del eclipse: tiempo mantenido desde la pulsación (el dardo sale al pulsar)
+  phases: { seed: 0.3, condense: 1.5, eclipse: 3.0 },
   bolt: { speed: 27, damage: 9, life: 0.75 },
-  charged: { speed: 24, damage: 40, life: 1.0 },
+  seed: { speed: 24, damage: 14, life: 0.9 },
+  condense: { speed: 21, damage: 30, life: 1.1 },
+  eclipse: { speed: 18, damage: 60, life: 1.35 },
   counter: { speed: 36, damage: 85, life: 1.0 },
 };
 
@@ -67,6 +73,8 @@ export class Hero {
     this.recoil = 0;
     this.shotCd = 0;
     this.charging = false; this.chargeT = 0; this.charge = 0; this.chargeFull = false;
+    this.phase = 0;         // 0 nada · 1 semilla · 2 condensación · 3 eclipse
+    this.cast = null;       // { t, launch } para el animador y el orbe de la mano
     this.shots = 0;
   }
 
@@ -393,7 +401,7 @@ export class Hero {
     // golpe de éter (L / clic derecho): cuerpo a cuerpo con ventana de desvío
     if (!this.attack && input.pressed('parry', 0.08)) {
       input.consume('parry');
-      this.charging = false; this.charge = 0;
+      this.cancelCharge();
       this.startAttack('strike');
       return;
     }
@@ -420,11 +428,15 @@ export class Hero {
   }
 
   updateShooting(dt, input, ax) {
-    const T = TUNING;
+    const T = TUNING, P = T.phases;
     this.updateAim(input, ax);
     if (this.shotCd > 0) this.shotCd -= dt;
     if (this.aimHold > 0) this.aimHold -= dt;
     this.recoil = Math.max(0, this.recoil - dt * 7);
+    if (this.cast && this.cast.launch != null) {
+      this.cast.launch += dt;
+      if (this.cast.launch > 0.55) this.cast = null;
+    }
     if (this.riposteWindow > 0 && input.pressed('attack', T.attackBuffer)) {
       input.consume('attack');
       this.fireCounter();
@@ -433,18 +445,36 @@ export class Hero {
     if (input.pressed('attack', T.attackBuffer) && this.shotCd <= 0) {
       input.consume('attack');
       this.fire('bolt');
-      this.charging = true; this.chargeT = 0; this.chargeFull = false;
+      this.charging = true; this.chargeT = 0; this.chargeFull = false; this.phase = 0;
     }
     if (this.charging) {
       if (input.isDown('attack')) {
         this.chargeT += dt;
-        this.charge = clamp((this.chargeT - T.chargeDelay) / T.chargeTime, 0, 1);
-        if (this.charge >= 1 && !this.chargeFull) { this.chargeFull = true; this.game.events.emit('chargeFull', {}); }
+        this.charge = clamp(this.chargeT / P.eclipse, 0, 1);
+        const ph = this.chargeT >= P.eclipse ? 3 : this.chargeT >= P.condense ? 2 : this.chargeT >= P.seed ? 1 : 0;
+        if (ph > this.phase) {
+          this.phase = ph;
+          this.game.events.emit('chargePhase', { phase: ph });
+          if (ph === 3 && !this.chargeFull) { this.chargeFull = true; this.game.events.emit('chargeFull', {}); }
+        }
+        // la esfera aparece en la palma tras un instante (un toque rápido es solo un dardo)
+        this.cast = this.chargeT > 0.08 ? { t: this.chargeT, hold: 'side' } : null;
       } else {
-        if (this.charge >= 1) this.fire('charged');
-        this.charging = false; this.charge = 0; this.chargeFull = false;
+        // soltar: lanzamiento del orbe de la fase alcanzada
+        if (this.phase > 0) {
+          const kind = ['', 'seed', 'condense', 'eclipse'][this.phase];
+          this.fire(kind);
+          this.cast = { t: this.chargeT, hold: 'side', launch: 0, kind };
+        } else this.cast = null;
+        this.charging = false; this.charge = 0; this.chargeFull = false; this.phase = 0; this.chargeT = 0;
       }
     }
+  }
+
+  // Corta la carga (golpe recibido, desvío, paso etéreo): la esfera se disipa sin lanzarse.
+  cancelCharge() {
+    this.charging = false; this.charge = 0; this.chargeFull = false; this.phase = 0; this.chargeT = 0;
+    if (this.cast && this.cast.launch == null) this.cast = null;
   }
 
   fire(kind, target = null) {
@@ -460,7 +490,7 @@ export class Hero {
     }
     this.shotCd = T.shotCd;
     this.aimHold = kind === 'bolt' ? 0.55 : 0.8;
-    this.recoil = kind === 'bolt' ? 0.6 : 1;
+    this.recoil = kind === 'bolt' ? 0.6 : kind === 'seed' ? 0.7 : 1;
     this.shots++;
     this.game.spawnBolt({ x: m.x, y: m.y, dx, dy, kind, speed: spec.speed, damage: spec.damage, life: spec.life, owner: 'hero' });
     this.game.events.emit('shoot', { kind, x: m.x, y: m.y, dx, dy });
@@ -469,7 +499,7 @@ export class Hero {
   fireCounter() {
     const tgt = this.riposteTarget;
     this.riposteWindow = 0;
-    this.charging = false; this.charge = 0;
+    this.cancelCharge();
     const c = tgt && tgt.alive ? { x: tgt.x, y: tgt.y + 1.2 } : null;
     this.fire('counter', c);
     this.game.events.emit('counter', { x: this.body.x, y: this.body.y + 1.4 });
@@ -508,7 +538,7 @@ export class Hero {
     this.stats.damageTaken += dmg;
     this.invuln = TUNING.invuln;
     this.attack = null;
-    this.charging = false; this.charge = 0;
+    this.cancelCharge();
     const dir = Math.sign(this.body.x - fromX) || -this.facing;
     this.vx = dir * (opts.knock || 4.5);
     if (!opts.noLift) { this.vy = 3.2; this.grounded = false; }
@@ -523,6 +553,7 @@ export class Hero {
   respawn(x, y, full = false) {
     this.body.x = x; this.body.y = y; this.body.h = TUNING.h;
     this.vx = 0; this.vy = 0; this.attack = null; this.grounded = false;
+    this.cancelCharge(); this.cast = null;
     this.setMode('air');
     this.invuln = 1.0;
     if (full) this.hp = this.maxHp;
@@ -539,6 +570,8 @@ export class Hero {
       attack: this.attack ? { id: this.attack.id, t: this.attack.t } : null,
       skid: this.skid, landImpact: this.landImpact, ledge: this.ledge,
       interact: this.interact, look: this.lookTarget || null,
+      chargeT: this.chargeT, phase: this.phase,
+      cast: this.cast && !this.attack && ['ground', 'air', 'slide', 'dash'].includes(this.mode) ? this.cast : null,
     };
   }
 }

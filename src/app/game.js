@@ -6,11 +6,12 @@ import { segAABB, sweepHits, expand } from '../core/geom2d.js';
 import { PhysicsWorld, moveBody } from '../physics2d/world.js';
 import { Hero, TUNING } from '../actors/hero.js';
 import { Marauder } from '../actors/marauder.js';
-import { ATTACKS, SORCERER_CARRY } from '../animation/poses.js';
+import { ATTACKS, MAGE_CARRY } from '../animation/poses.js';
 import { Projectiles } from '../actors/projectiles.js';
 import { Sentinel } from '../actors/sentinel.js';
 import { RestFountain, CaudalFragment, ClavijaPedestal } from '../world/mechanisms.js';
-import { buildSorcerer, SORCERER_CLOTH, GLOW_COLOR } from '../render/sorcererModel.js';
+import { buildShadowMage, MAGE_COAT, MAGE_GLOW } from '../render/shadowMageModel.js';
+import { EclipseOrb } from '../render/eclipseOrb.js';
 import { Animator } from '../animation/animator.js';
 import { buildMarauder, cloneMarauder } from '../render/marauderModel.js';
 import { Cape } from '../render/cloth.js';
@@ -132,28 +133,32 @@ export class Game {
     this.physics = new PhysicsWorld();
     this.level = buildLevel01(this, this.tex);
 
-    // Héroe: hechicero con brazales gemelos, manto y faldones simulados
-    const model = buildSorcerer();
+    // Héroe: mago de sombras (modelo ligero para el juego), abrigo abierto simulado en dos paños
+    // (delantero con faldones que dejan ver las piernas y trasero con el forro violeta) y la esfera
+    // del eclipse que crece sobre la palma activa.
+    const model = buildShadowMage({ hiDetail: false });
     this.heroModel = model;
     scene.add(model.root);
     this.hero = new Hero(this, SPAWN.x, SPAWN.y);
-    this.heroAnim = new Animator(model, { carry: SORCERER_CARRY });
-    const mantle = new Cape(model, scene, { cols: 6, rows: 12, length: 1.02, palette: SORCERER_CLOTH });
-    const robe = new Cape(model, scene, { cols: 4, rows: 7, length: 0.52, palette: { ...SORCERER_CLOTH, line: '#d2a64e' }, anchors: model.robeAnchors, bone: 'hips', drag: 0.94 });
+    this.heroAnim = new Animator(model, { carry: MAGE_CARRY });
+    const coatOpts = { cols: 9, rows: 16, flare: 0.45, gather: 1.5, palette: MAGE_COAT, bone: 'hips', drag: 0.95 };
+    const coatFront = new Cape(model, scene, { ...coatOpts, length: 0.68, anchors: model.coatAnchors.front, outward: -0.03 });
+    const coatBack = new Cape(model, scene, { ...coatOpts, length: 0.72, anchors: model.coatAnchors.back, outward: 0.03, liningFlip: true });
     this.heroCape = {
-      parts: [mantle, robe], panels: [...mantle.panels, ...robe.panels],
-      step(dt, w) { mantle.step(dt, w); robe.step(dt, w * 0.5); },
-      reset() { mantle.reset(); robe.reset(); },
+      parts: [coatFront, coatBack], panels: [...coatFront.panels, ...coatBack.panels],
+      step(dt, w) { coatFront.step(dt, w * 0.55); coatBack.step(dt, w * 0.55); },
+      reset() { coatFront.reset(); coatBack.reset(); },
     };
     for (const F of Object.values(model.foci)) { F.flare.material.map = this.tex.dot; F.flare.material.needsUpdate = true; }
-    this.trail = new SwordTrail(scene, { color: new THREE.Color(0.35, 1.9, 2.4) });
+    this.heroOrb = new EclipseOrb(scene, { dot: this.tex.dot, light: true });
+    this.trail = new SwordTrail(scene, { color: new THREE.Color(1.1, 0.55, 2.4) });
     this.projectiles = new Projectiles(this);
     this.hero.grounded = true;
     // mira láser del apuntado libre
     {
       const g = new THREE.PlaneGeometry(1, 1);
       g.translate(0.5, 0, 0);
-      this.laser = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: new THREE.Color(0.5, 2.2, 2.8), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+      this.laser = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: new THREE.Color(1.3, 0.6, 2.8), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
       this.laser.renderOrder = 9;
       this.laser.visible = false;
       scene.add(this.laser);
@@ -328,15 +333,26 @@ export class Game {
       this.dashFx = 0.24;
     });
     E.on('shoot', (d) => {
-      A.play(d.kind === 'bolt' ? 'shoot' : d.kind, { pan: panX(d.x) });
+      A.play(d.kind, { pan: panX(d.x) });
       this.muzzleT = d.kind === 'bolt' ? 0.07 : 0.16;
       this.muzzleKind = d.kind;
-      if (d.kind !== 'bolt') {
-        this.cameraShake(d.kind === 'counter' ? 0.35 : 0.2);
-        this.burst(this.fx.arcane, d.x, d.y, 26, d.kind === 'counter' ? [2.4, 1.7, 0.6] : [0.5, 1.9, 2.4], 3.2, 0.35);
+      if (d.kind === 'counter') {
+        this.cameraShake(0.35);
+        this.burst(this.fx.arcane, d.x, d.y, 26, [2.4, 1.7, 0.6], 3.2, 0.35);
+      } else if (d.kind !== 'bolt') {
+        // lanzamiento del eclipse: retroceso de cámara y estallido de sombra según la fase
+        const k = d.kind === 'eclipse' ? 1 : d.kind === 'condense' ? 0.55 : 0.25;
+        this.cameraShake(0.08 + k * 0.3);
+        if (d.kind === 'eclipse') this.hitstop = Math.max(this.hitstop, 0.05);
+        this.burst(this.fx.arcane, d.x, d.y, Math.round(10 + k * 30), [1.1, 0.5, 2.3], 2 + k * 2.5, 0.3 + k * 0.2);
+        this.burst(this.fx.arcane, d.x, d.y, Math.round(6 + k * 18), [0.25, 0.1, 0.45], 1.5 + k * 2, 0.4);
       }
     });
-    E.on('chargeFull', () => { A.play('chargeFull'); });
+    E.on('chargePhase', (d) => {
+      A.play('chargePhase', { phase: d.phase });
+      if (d.phase >= 2) this.cameraShake(d.phase === 3 ? 0.12 : 0.05);
+    });
+    E.on('chargeFull', () => { this.flash = 0.06; this.post.final.uniforms.flashColor.value.set('#9a6cff'); });
     E.on('counter', () => {
       this.slow(0.35, 0.35);
       this.flash = 0.16; this.post.final.uniforms.flashColor.value.set('#ffe6a8');
@@ -605,7 +621,13 @@ export class Game {
     e.anim.reset(); e.cape.reset();
   }
 
-  spawnBolt(spec) { return this.projectiles.fire(spec); }
+  spawnBolt(spec) {
+    // los orbes del eclipse parten de la esfera que el mago sostenía en la palma
+    if (spec.owner === 'hero' && (spec.kind === 'seed' || spec.kind === 'condense' || spec.kind === 'eclipse') && this.heroOrb.visible) {
+      spec = { ...spec, x: this.heroOrb.center.x, y: this.heroOrb.center.y };
+    }
+    return this.projectiles.fire(spec);
+  }
 
   onBoltHitEnemy(p, e, res) {
     this.hero.stats.hits++;
@@ -614,16 +636,20 @@ export class Game {
     else if (res === 'armor') this.audio.play('armor');
   }
 
-  // Partículas del poder: motas que convergen al foco durante la carga y estela del paso etéreo.
+  // Partículas del poder: motas de sombra que la esfera atrae en espiral durante la carga (cada fase
+  // atrae desde más lejos) y estela del paso etéreo.
   arcaneFx(dt) {
-    const hero = this.hero, anim = this.heroAnim;
-    const f = anim.bladeBase;
-    if (hero.charge > 0.02) {
-      const n = hero.charge >= 1 ? 3 : 2;
+    const hero = this.hero, orb = this.heroOrb;
+    if (hero.charging && orb.visible && !orb.flying) {
+      const f = orb.center, ph = hero.phase;
+      const n = ph >= 3 ? 3 : ph >= 2 ? 2 : 1;
       for (let i = 0; i < n; i++) {
-        const a = Math.random() * Math.PI * 2, r = 0.35 + Math.random() * 0.35;
-        const ox = Math.cos(a) * r, oy = Math.sin(a) * r;
-        this.fx.arcane.emit({ x: f.x + ox, y: f.y + oy, z: f.z, vx: -ox * 3.2, vy: -oy * 3.2, vz: 0, life: 0.28, size: 0.03 + hero.charge * 0.025, grow: -0.06, drag: 0, gravity: 0, color: [0.5, 1.9, 2.3], alpha: 0.9 });
+        const a = Math.random() * Math.PI * 2, r = 0.3 + Math.random() * (0.25 + ph * 0.18);
+        const ox = Math.cos(a) * r, oy = Math.sin(a) * r * 0.8, oz = (Math.random() - 0.5) * 0.3;
+        // velocidad hacia el núcleo con giro tangencial: espiral
+        const life = 0.3 + Math.random() * 0.12, k = 1 / life;
+        const dark = Math.random() < 0.55;
+        this.fx.arcane.emit({ x: f.x + ox, y: f.y + oy, z: f.z + oz, vx: (-ox - oy * 0.6) * k, vy: (-oy + ox * 0.6) * k, vz: -oz * k, life, size: 0.025 + ph * 0.01, grow: -0.07, drag: 0, gravity: 0, color: dark ? [0.32, 0.14, 0.62] : [1.1, 0.5, 2.2], alpha: dark ? 0.6 : 0.85 });
       }
     }
     if (this.dashFx > 0) {
@@ -631,7 +657,7 @@ export class Game {
       // silueta de motas a lo largo del cuerpo: imagen residual del paso etéreo
       for (let i = 0; i < 9; i++) {
         const h = Math.random();
-        this.fx.arcane.emit({ x: hero.x + (Math.random() - 0.5) * 0.4, y: hero.y + h * 1.75, z: (Math.random() - 0.5) * 0.3, vx: -hero.vx * 0.06, vy: 0.1, life: 0.3 + Math.random() * 0.15, size: 0.05 + (1 - Math.abs(h - 0.55)) * 0.03, grow: -0.08, drag: 2, gravity: 0, color: [0.35, 1.5, 1.9], alpha: 0.7 });
+        this.fx.arcane.emit({ x: hero.x + (Math.random() - 0.5) * 0.4, y: hero.y + h * 1.75, z: (Math.random() - 0.5) * 0.3, vx: -hero.vx * 0.06, vy: 0.1, life: 0.3 + Math.random() * 0.15, size: 0.05 + (1 - Math.abs(h - 0.55)) * 0.03, grow: -0.08, drag: 2, gravity: 0, color: [0.75, 0.38, 1.6], alpha: 0.7 });
       }
     }
   }
@@ -826,13 +852,13 @@ export class Game {
     // Interfaz
     if (this.state === 'play') {
       this.hud.updateHP(hero.hp, hero.maxHp);
-      this.hud.setCharge(hero.charge);
+      this.hud.setCharge(hero.charge, hero.phase);
       this.hud.updateMap(hero.x, hero.y, t);
       let p = null;
       if (!hero.locked) for (const m of this.level.mechanisms) { if (m.prompt) { p = m.prompt(hero); if (p) break; } }
       this.hud.prompt(p, cam, window.innerWidth, window.innerHeight);
-      this.audio.update(dt, { water: this.waterNear(), fall: this.fallNear(), interior: this.interior, combat: this.combatLevel(), charge: hero.charge });
-    } else this.hud.prompt(null);
+      this.audio.update(dt, { water: this.waterNear(), fall: this.fallNear(), interior: this.interior, combat: this.combatLevel(), charge: hero.charge, phase: hero.phase });
+    } else { this.hud.prompt(null); this.audio.silenceCharge(); }
     this.hud.update(dt);
     if (this.debugOn) {
       const info = this.renderer.info;
@@ -840,20 +866,25 @@ export class Game {
     }
   }
 
-  // Brazal activo: destello del foco (disparo y carga), hoja de éter del golpe, runas y mira láser.
+  // Mano activa: destello del dardo, esfera del eclipse sobre la palma (con su luz violeta sobre mano
+  // y rostro), hoja de éter del golpe, bordados que laten con la carga y mira láser.
   updatePowerVisuals(dt, t) {
     const hero = this.hero, anim = this.heroAnim, model = this.heroModel;
     const active = anim.activeFocus;
     this.muzzleT = Math.max(0, (this.muzzleT || 0) - dt);
+    const st = hero.animState();
+    const holding = st.cast && st.cast.launch == null && active && hero.mode !== 'dead';
+    if (holding) this.heroOrb.follow(anim, st, dt, active);
+    else this.heroOrb.hide();
+    this.heroOrb.render(this.camera.cam, dt);
     for (const side in model.foci) {
       const F = model.foci[side];
       const on = F === active;
       let s = 0, a = 0;
-      if (on && hero.charge > 0) { s = 0.18 + hero.charge * 0.32 + (hero.charge >= 1 ? 0.06 * Math.sin(t * 30) : 0); a = 0.55 + hero.charge * 0.45; }
-      if (on && this.muzzleT > 0) { const k = this.muzzleT / (this.muzzleKind === 'bolt' ? 0.07 : 0.16); s = Math.max(s, (this.muzzleKind === 'bolt' ? 0.45 : 0.95) * k); a = 1; }
+      if (on && this.muzzleT > 0) { const k = this.muzzleT / (this.muzzleKind === 'bolt' ? 0.07 : 0.16); s = (this.muzzleKind === 'bolt' ? 0.4 : 0.85) * k; a = 1; }
       F.flare.scale.setScalar(Math.max(0.001, s));
       F.flare.material.opacity = a;
-      F.flare.material.color.copy(GLOW_COLOR).multiplyScalar(this.muzzleKind === 'counter' && this.muzzleT > 0 ? 1 : 0.8);
+      F.flare.material.color.copy(MAGE_GLOW).multiplyScalar(0.8);
       if (this.muzzleKind === 'counter' && this.muzzleT > 0) F.flare.material.color.setRGB(2.6, 1.9, 0.7);
       // hoja de éter durante el golpe
       let bw = 0;
@@ -864,9 +895,10 @@ export class Game {
       F.blade.visible = bw > 0.01;
       F.blade.material.opacity = Math.max(0, bw) * 0.9;
     }
-    // runas del equipo: laten al cargar
+    // bordados y broche: laten con la carga (más fuerte en el eclipse)
     const rm = model.materials[1];
-    rm.userData.glow.value = 1 + hero.charge * 1.6 + (hero.charge >= 1 ? 0.5 * Math.sin(t * 24) : 0) + (this.muzzleT > 0 ? 0.8 : 0);
+    const pulse = hero.phase >= 3 ? 0.5 * Math.max(0, Math.sin(t * 5.7)) ** 4 : 0;
+    rm.userData.glow.value = 1 + hero.charge * 1.4 + pulse + (this.muzzleT > 0 ? 0.6 : 0);
     // mira láser en apuntado libre
     const L = this.laser;
     if (hero.aimLock && this.state === 'play') {

@@ -26,7 +26,7 @@ export class HUD {
         <div class="status">
           <div class="st-sigil">${SIGIL_SVG}</div>
           <div class="st-body">
-            <div class="st-row"><span class="st-lab">ÉTER</span><div class="st-ether"><i></i></div></div>
+            <div class="st-row"><span class="st-lab">ECLIPSE</span><div class="st-ether"><i></i><b class="n1" style="left:10%"></b><b class="n2" style="left:50%"></b></div></div>
             <div class="st-row"><span class="st-lab st-e">VIDA</span><span class="st-num">06</span><div class="hp" aria-label="Vida"></div></div>
           </div>
         </div>
@@ -74,13 +74,16 @@ export class HUD {
     this.numEl.classList.toggle('low', hp <= 2);
   }
 
-  // Reserva de éter: se llena al mantener el disparo; late al estar lista.
-  setCharge(c) {
-    const q = Math.round(c * 50) / 50;
-    if (q === this.charge) return;
-    this.charge = q;
+  // Carga del eclipse: se llena al mantener el disparo (3 s); las muescas marcan semilla y
+  // condensación y la barra late al llegar al eclipse.
+  setCharge(c, phase = 0) {
+    const q = Math.round(c * 60) / 60;
+    if (q === this.charge && phase === this.phase) return;
+    this.charge = q; this.phase = phase;
     this.etherBar.style.transform = `scaleX(${Math.max(0.02, q)})`;
-    this.etherEl.classList.toggle('full', q >= 1);
+    this.etherEl.classList.toggle('p1', phase >= 1);
+    this.etherEl.classList.toggle('p2', phase >= 2);
+    this.etherEl.classList.toggle('full', phase >= 3);
   }
 
   // Mapa local: el plano del nivel se dibuja una vez (sólidos, salas, puntos de interés) y cada

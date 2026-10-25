@@ -244,21 +244,55 @@ export class GameAudio {
         this.tone({ t: 2.6, f: 60, f2: 35, dur: 0.6, gain: 0.5, pan });
         break;
       }
-      // ---- poderes arcanos: timbres de cristal y aire ionizado (sin samples) ----
-      case 'shoot':
-        this.tone({ f: v(1250, 1350), f2: 420, dur: 0.11, type: 'triangle', gain: 0.1, pan });
-        this.tone({ f: v(2500, 2700), f2: 900, dur: 0.07, type: 'sine', gain: 0.05, pan });
-        this.noiseHit({ dur: 0.08, type: 'highpass', f: 2500, f2: 6000, gain: 0.08, pan, verb: false });
-        this.tone({ f: 120, f2: 70, dur: 0.06, gain: 0.12, pan });
+      // ---- poderes de sombra: graves que respiran hacia dentro, cristal oscuro y aire que implosiona ----
+      case 'bolt':
+        // dardo de sombra: chasquido seco y un silbido grave que se apaga (no un láser brillante)
+        this.noiseHit({ dur: 0.07, type: 'bandpass', f: v(1700, 2100), f2: 500, q: 1.4, gain: 0.11, pan, verb: false });
+        this.tone({ f: v(620, 680), f2: 210, dur: 0.1, type: 'triangle', gain: 0.07, pan });
+        this.tone({ f: 150, f2: 62, dur: 0.08, gain: 0.14, pan });
         break;
-      case 'chargeFull':
-        [81, 88].forEach((n, i) => this.tone({ t: i * 0.05, f: NOTE(n), dur: 0.5, type: 'triangle', gain: 0.05, pan }));
+      case 'chargePhase': {
+        const ph = o.phase || 1;
+        if (ph === 1) {
+          // semilla: la sombra prende en la palma (golpe sordo y un destello de cristal oscuro)
+          this.tone({ f: 98, f2: 70, dur: 0.22, gain: 0.2, pan });
+          this.tone({ f: NOTE(74), dur: 0.5, type: 'sine', gain: 0.025, pan });
+          this.noiseHit({ dur: 0.2, f: 700, f2: 260, q: 2, gain: 0.05, pan, src: 'pink' });
+        } else if (ph === 2) {
+          // condensación: el aire se recoge hacia la esfera (soplo inverso) y un pulso grave
+          this.noiseHit({ dur: 0.38, f: 3600, f2: 380, q: 1.6, gain: 0.08, pan, attack: 0.3, src: 'pink' });
+          this.tone({ t: 0.3, f: 73, f2: 46, dur: 0.45, type: 'sawtooth', gain: 0.07, pan });
+          this.tone({ t: 0.3, f: 55, f2: 40, dur: 0.5, gain: 0.3, pan });
+          [62, 69].forEach((n, i) => this.tone({ t: 0.3 + i * 0.03, f: NOTE(n + 12), dur: 0.9, type: 'sine', gain: 0.022, pan }));
+        } else {
+          // eclipse listo: latido profundo, acorde suspendido de cristal y un brillo que se abre
+          this.noiseHit({ dur: 0.32, f: 4200, f2: 300, q: 1.2, gain: 0.09, pan, attack: 0.26, src: 'pink' });
+          this.tone({ t: 0.26, f: 62, f2: 31, dur: 0.75, gain: 0.5, pan });
+          this.tone({ t: 0.26, f: 124, f2: 62, dur: 0.4, type: 'sawtooth', gain: 0.06, pan });
+          [62, 69, 74, 76].forEach((n, i) => this.tone({ t: 0.28 + i * 0.04, f: NOTE(n + 12), dur: 1.6, type: 'triangle', gain: 0.026, pan }));
+          this.noiseHit({ t: 0.27, dur: 0.6, type: 'highpass', f: 5200, gain: 0.03, pan });
+        }
         break;
-      case 'charged':
-        this.tone({ f: 520, f2: 140, dur: 0.38, type: 'sawtooth', gain: 0.09, pan });
-        this.tone({ f: 1040, f2: 300, dur: 0.3, type: 'triangle', gain: 0.1, pan });
-        this.noiseHit({ dur: 0.45, f: 900, f2: 3800, q: 0.9, gain: 0.2, pan, src: 'pink' });
-        this.tone({ f: 70, f2: 32, dur: 0.35, gain: 0.4, pan });
+      }
+      case 'seed':
+        this.noiseHit({ dur: 0.18, f: 1300, f2: 420, q: 1.2, gain: 0.12, pan, src: 'pink' });
+        this.tone({ f: 260, f2: 90, dur: 0.18, type: 'triangle', gain: 0.08, pan });
+        this.tone({ f: 90, f2: 48, dur: 0.16, gain: 0.25, pan });
+        break;
+      case 'condense':
+        // implosión breve y salida: soplo grave con cola
+        this.noiseHit({ dur: 0.08, f: 300, f2: 2600, q: 1.3, gain: 0.08, pan, attack: 0.06, src: 'pink' });
+        this.noiseHit({ t: 0.06, dur: 0.42, f: 1500, f2: 260, q: 0.9, gain: 0.2, pan, src: 'pink' });
+        this.tone({ t: 0.06, f: 180, f2: 55, dur: 0.32, type: 'sawtooth', gain: 0.07, pan });
+        this.tone({ t: 0.06, f: 70, f2: 30, dur: 0.4, gain: 0.45, pan });
+        break;
+      case 'eclipse':
+        // el eclipse se suelta: succión, estallido con caída al subgrave y cola de cristal oscuro
+        this.noiseHit({ dur: 0.12, f: 260, f2: 3800, q: 1.1, gain: 0.12, pan, attack: 0.1, src: 'pink' });
+        this.noiseHit({ t: 0.1, dur: 0.75, f: 2000, f2: 180, q: 0.7, gain: 0.32, pan, src: 'pink' });
+        this.tone({ t: 0.1, f: 240, f2: 60, dur: 0.5, type: 'sawtooth', gain: 0.1, pan });
+        this.tone({ t: 0.1, f: 64, f2: 24, dur: 0.85, gain: 0.65, pan });
+        [50, 57, 62].forEach((n, i) => this.tone({ t: 0.12 + i * 0.02, f: NOTE(n + 24), f2: NOTE(n + 12), dur: 1.3, type: 'triangle', gain: 0.03, pan }));
         break;
       case 'counter':
         this.tone({ f: 330, f2: 90, dur: 0.6, type: 'sawtooth', gain: 0.12, pan });
@@ -332,18 +366,7 @@ export class GameAudio {
     T(this.ambRoom.g.gain, 0.08 * st.interior);
     T(this.verbIn.gain, 0.06 + st.interior * 0.32, 0.8);
     this.ambWind.flt.frequency.setTargetAtTime(380 + Math.sin(now * 0.23) * 120, now, 0.5);
-    // zumbido de carga del brazal: sube de tono mientras se acumula el éter
-    if (!this.chargeHum) {
-      const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = 180;
-      const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = 362;
-      const g = this.out(0, 0, false);
-      o.connect(g); o2.connect(g); o.start(); o2.start();
-      this.chargeHum = { o, o2, g };
-    }
-    const ch = st.charge || 0;
-    T(this.chargeHum.g.gain, ch > 0.02 ? 0.025 + ch * 0.05 : 0, 0.05);
-    T(this.chargeHum.o.frequency, 180 + ch * 260 + (ch >= 1 ? Math.sin(now * 40) * 12 : 0), 0.05);
-    T(this.chargeHum.o2.frequency, 362 + ch * 530, 0.05);
+    this.updateCharge(dt, st, now);
     // capa de combate
     this.music.combat += (st.combat - this.music.combat) * Math.min(1, dt * 0.8);
     T(this.combatBus.gain, this.music.combat * 0.9, 0.6);
@@ -367,6 +390,79 @@ export class GameAudio {
         }
       }
     }
+  }
+
+  // Voz de la carga del eclipse (continua mientras se mantiene): un grave oscuro que sube y abre su
+  // filtro, aire que se aspira hacia la palma en ciclos (ruido cuyo filtro cae mientras crece), un
+  // brillo de cristal desde la condensación, chasquidos de sombra y, en el eclipse, un latido.
+  buildChargeVoice() {
+    const ctx = this.ctx;
+    const bus = this.out(0, 0, true);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 200; lp.Q.value = 5;
+    const droneG = ctx.createGain(); droneG.gain.value = 0;
+    const o1 = ctx.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = NOTE(38);
+    const o2 = ctx.createOscillator(); o2.type = 'sawtooth'; o2.frequency.value = NOTE(38); o2.detune.value = 9;
+    const sub = ctx.createOscillator(); sub.type = 'sine'; sub.frequency.value = NOTE(26);
+    const subG = ctx.createGain(); subG.gain.value = 0;
+    o1.connect(lp); o2.connect(lp); lp.connect(droneG); droneG.connect(bus);
+    sub.connect(subG); subG.connect(bus);
+    const air = ctx.createBufferSource(); air.buffer = this.pink; air.loop = true;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2000; bp.Q.value = 3.5;
+    const airG = ctx.createGain(); airG.gain.value = 0;
+    air.connect(bp); bp.connect(airG); airG.connect(bus);
+    const shim = [NOTE(86), NOTE(93) * 1.004, NOTE(98) * 0.997].map((f) => {
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+      const g = ctx.createGain(); g.gain.value = 0;
+      o.connect(g); g.connect(bus); o.start();
+      return { o, g };
+    });
+    for (const n of [o1, o2, sub, air]) n.start();
+    bus.gain.value = 1;
+    return { bus, lp, droneG, o1, o2, subG, sub, bp, airG, shim, nextBeat: 0, wasOn: false };
+  }
+
+  updateCharge(dt, st, now) {
+    if (!this.chargeVoice) this.chargeVoice = this.buildChargeVoice();
+    const V = this.chargeVoice;
+    const T = (p, v, tc) => p.setTargetAtTime(v, now, tc);
+    const k = st.charge || 0, ph = st.phase || 0, on = k > 0.02;
+    const rel = on ? 0.06 : 0.035;
+    // grave: re grave que sube una cuarta a lo largo de la carga y abre el filtro
+    const f0 = NOTE(38) * Math.pow(2, (k * 5) / 12);
+    T(V.o1.frequency, f0, 0.08); T(V.o2.frequency, f0, 0.08);
+    T(V.lp.frequency, 160 + Math.pow(k, 1.3) * 1500 + (ph >= 3 ? 220 * Math.sin(now * 5.7) : 0), 0.06);
+    T(V.droneG.gain, on ? 0.028 + k * 0.06 : 0, rel);
+    T(V.subG.gain, on ? k * k * 0.22 : 0, rel);
+    // aspiración: ciclos que se aceleran con la fase; el filtro cae y el soplo crece hasta cortarse
+    const rate = 0.9 + ph * 0.55;
+    const cyc = (now * rate) % 1;
+    T(V.bp.frequency, 380 + 3400 * (1 - cyc) * (1 - cyc), 0.015);
+    T(V.airG.gain, on ? (0.025 + k * 0.07) * Math.pow(cyc, 1.6) : 0, on ? 0.02 : 0.03);
+    // brillo de cristal oscuro desde la condensación, con trémolo lento
+    const sh = on && ph >= 2 ? (ph >= 3 ? 0.011 : 0.006) * (0.6 + 0.4 * Math.sin(now * 6.3)) : 0;
+    V.shim.forEach((q, i) => T(q.g.gain, sh / (1 + i * 0.6), 0.05));
+    // chasquidos de sombra: más frecuentes en cada fase
+    if (on && ph >= 1 && Math.random() < (3 + ph * 7) * dt) {
+      const pan = (Math.random() - 0.5) * 0.5;
+      this.noiseHit({ dur: 0.012 + Math.random() * 0.03, type: 'highpass', f: 2800 + Math.random() * 4000, gain: 0.015 + Math.random() * 0.035, pan, verb: false });
+    }
+    // latido del eclipse sostenido (al ritmo del pulso de la esfera)
+    if (on && ph >= 3) {
+      if (!V.beatOn) { V.beatOn = true; V.nextBeat = now + 0.9; }
+      if (now >= V.nextBeat) {
+        this.tone({ f: 64, f2: 36, dur: 0.2, gain: 0.32 });
+        this.tone({ t: 0.17, f: 58, f2: 34, dur: 0.22, gain: 0.2 });
+        V.nextBeat = now + 1.1;
+      }
+    } else V.beatOn = false;
+  }
+
+  silenceCharge() {
+    const V = this.chargeVoice;
+    if (!V) return;
+    const now = this.ctx.currentTime;
+    for (const g of [V.droneG, V.subG, V.airG, ...V.shim.map((q) => q.g)]) g.gain.setTargetAtTime(0, now, 0.03);
+    V.beatOn = false;
   }
 
   pluck(f, gain) {
