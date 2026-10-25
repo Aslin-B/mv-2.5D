@@ -70,7 +70,7 @@ export function bindPositions(P) {
   return { pos, dirL, dirR };
 }
 
-export function buildSkeleton(P) {
+export function buildSkeleton(P, { fingers = false } = {}) {
   const { pos, dirL, dirR } = bindPositions(P);
   const bones = {};
   for (const name of BONE_NAMES) {
@@ -89,7 +89,92 @@ export function buildSkeleton(P) {
       bones[name].position.set(wp[0], wp[1], wp[2]);
     }
   }
-  return { bones, pos, dirL, dirR };
+  const S = { bones, pos, dirL, dirR, fingerRig: null };
+  if (fingers) S.fingerRig = addFingerBones(S, fingers === true ? 1 : fingers);
+  return S;
+}
+
+// --- Dedos articulados ---------------------------------------------------------
+// Tres falanges por dedo (el pulgar: metacarpiano, proximal y distal) como huesos hijos de la mano.
+// Ejes en el espacio del modelo en la pose de enlace (rotaciones de reposo = identidad):
+// d = hacia las yemas, f = hacia delante (lado del pulgar), s = normal de la palma.
+export const FINGERS = ['thb', 'idx', 'mid', 'rng', 'pky'];
+
+export function handFrame(side, B) {
+  const L = side > 0 ? 'L' : 'R';
+  const d = side > 0 ? B.dirL : mir(B.dirL);
+  const W = B.pos['hand' + L];
+  const f = nrm(add([0, 0, 1], scl(d, -d[2])));
+  const s = nrm(cross(f, d)).map((v) => v * (side > 0 ? -1 : 1));
+  return { L, d, f, s, W };
+}
+
+// Medidas de una mano adulta (m). kd: distancia del nudillo a la muñeca; kf: desplazamiento hacia
+// el pulgar; len: falanges; r: radios en cada articulación; fan: abanico natural (rad hacia f).
+const FINGER_SPEC = {
+  idx: { kd: 0.094, kf: 0.0275, len: [0.043, 0.026, 0.021], r: [0.0087, 0.0079, 0.0071, 0.0063], fan: 0.06 },
+  mid: { kd: 0.097, kf: 0.0093, len: [0.047, 0.029, 0.022], r: [0.009, 0.0081, 0.0073, 0.0064], fan: 0.0 },
+  rng: { kd: 0.093, kf: -0.0095, len: [0.044, 0.028, 0.021], r: [0.0084, 0.0076, 0.0068, 0.006], fan: -0.05 },
+  pky: { kd: 0.085, kf: -0.0268, len: [0.035, 0.021, 0.018], r: [0.0074, 0.0067, 0.006, 0.0054], fan: -0.12 },
+};
+
+export function fingerLayout(side, B, k = 1) {
+  const H = handFrame(side, B);
+  const { d, f, s, W } = H;
+  const P = (dd, ff, ss) => add(add(add(W, scl(d, dd * k)), scl(f, ff * k)), scl(s, ss * k));
+  const out = [];
+  for (const name of ['idx', 'mid', 'rng', 'pky']) {
+    const F = FINGER_SPEC[name];
+    const dir = nrm(add(scl(d, Math.cos(F.fan)), scl(f, Math.sin(F.fan))));
+    const j0 = P(F.kd, F.kf, -0.004);
+    const j1 = add(j0, scl(dir, F.len[0] * k));
+    const j2 = add(j1, scl(dir, F.len[1] * k));
+    const j3 = add(j2, scl(dir, F.len[2] * k));
+    // flexión: gira la dirección del dedo hacia la palma (eje = dir × s); abducción: alrededor de s
+    out.push({ name, joints: [j0, j1, j2, j3], dir, axis: nrm(cross(dir, s)), spread: s, r: F.r.map((v) => v * k) });
+  }
+  // Pulgar: nace junto a la muñeca, del lado de la palma, y apunta hacia delante y abajo.
+  const tdir = nrm(add(add(scl(d, 0.62), scl(f, 0.62)), scl(s, 0.48)));
+  const t0 = P(0.024, 0.021, 0.012);
+  const t1 = add(t0, scl(tdir, 0.044 * k));
+  const tdir2 = nrm(add(tdir, scl(d, 0.35)));
+  const t2 = add(t1, scl(tdir2, 0.033 * k));
+  const t3 = add(t2, scl(tdir2, 0.028 * k));
+  // el pulgar se opone: se cierra hacia el meñique y la palma
+  const taxis = nrm(cross(tdir, nrm(add(scl(s, 0.75), scl(f, -0.65)))));
+  out.unshift({ name: 'thb', joints: [t0, t1, t2, t3], dir: tdir, axis: taxis, spread: nrm(cross(tdir, taxis)), r: [0.0128, 0.0108, 0.0094, 0.0082].map((v) => v * k) });
+  return { ...H, fingers: out };
+}
+
+function addFingerBones(S, k = 1) {
+  const rig = {};
+  for (const side of [1, -1]) {
+    const lay = fingerLayout(side, S, k);
+    const L = lay.L;
+    const hand = S.bones['hand' + L];
+    const hp = S.pos['hand' + L];
+    rig[L] = { frame: lay, fingers: [] };
+    for (const fg of lay.fingers) {
+      const chain = [];
+      let parent = hand, pp = hp;
+      for (let i = 0; i < 3; i++) {
+        const b = new THREE.Bone();
+        b.name = `${fg.name}${i + 1}${L}`;
+        const wp = fg.joints[i];
+        b.position.set(wp[0] - pp[0], wp[1] - pp[1], wp[2] - pp[2]);
+        parent.add(b);
+        S.bones[b.name] = b;
+        S.pos[b.name] = wp;
+        chain.push(b);
+        parent = b; pp = wp;
+      }
+      rig[L].fingers.push({
+        name: fg.name, bones: chain, joints: fg.joints, r: fg.r,
+        axis: new THREE.Vector3(...fg.axis), spread: new THREE.Vector3(...fg.spread), dir: fg.dir,
+      });
+    }
+  }
+  return rig;
 }
 
 // --- Cuerpo deformable -------------------------------------------------------
@@ -207,7 +292,10 @@ export function buildHand(side, B, opts = {}) {
 // --- Conversión de la malla SDF a geometría Three.js -----------------------
 
 // paint(px,py,pz, prim) -> {c:[r,g,b] lineal, r: rugosidad, m: metal, p: patrón, w: desgaste}
-export function meshToGeometry(mesh, scene, paint, { skin = false, boneIndex = null, sigma = 0.03, origin = [0, 0, 0] } = {}) {
+// ao: oclusión horneada en el color de vértice. Mide cuánto espacio libre hay a lo largo de la
+// normal (a `dist` metros) dentro de la propia escena SDF: pliegues, comisuras, juntas y el
+// interior de las mangas se oscurecen sin coste en tiempo de ejecución.
+export function meshToGeometry(mesh, scene, paint, { skin = false, boneIndex = null, sigma = 0.03, origin = [0, 0, 0], ao = null } = {}) {
   const { positions, normals, indices } = mesh;
   const n = positions.length / 3;
   const colors = new Float32Array(n * 3);
@@ -218,8 +306,15 @@ export function meshToGeometry(mesh, scene, paint, { skin = false, boneIndex = n
   for (let v = 0; v < n; v++) {
     const x = positions[v * 3], y = positions[v * 3 + 1], z = positions[v * 3 + 2];
     const an = scene.analyze(x, y, z, sigma);
-    const pr = paint(x, y, z, an.prim || {}, normals[v * 3], normals[v * 3 + 1], normals[v * 3 + 2]);
-    colors[v * 3] = pr.c[0]; colors[v * 3 + 1] = pr.c[1]; colors[v * 3 + 2] = pr.c[2];
+    const nx = normals[v * 3], ny = normals[v * 3 + 1], nz = normals[v * 3 + 2];
+    const pr = paint(x, y, z, an.prim || {}, nx, ny, nz);
+    let occ = 1;
+    if (ao) {
+      let o = 0;
+      for (const dd of ao.dist) o += Math.min(Math.max(scene.eval(x + nx * dd, y + ny * dd, z + nz * dd) / dd, 0), 1);
+      occ = 1 - (1 - o / ao.dist.length) * (pr.aoK ?? ao.k);
+    }
+    colors[v * 3] = pr.c[0] * occ; colors[v * 3 + 1] = pr.c[1] * occ; colors[v * 3 + 2] = pr.c[2] * occ;
     surf[v * 4] = pr.r; surf[v * 4 + 1] = pr.m; surf[v * 4 + 2] = pr.p; surf[v * 4 + 3] = pr.w ?? 0.5;
     pos[v * 3] = x - origin[0]; pos[v * 3 + 1] = y - origin[1]; pos[v * 3 + 2] = z - origin[2];
     if (skin) {
@@ -312,15 +407,15 @@ export function shellGeometry({ rx, ry, rz, phi0 = 0, phi1 = Math.PI * 2, th0 = 
 }
 
 // Ensambla el personaje: SkinnedMesh del cuerpo + piezas rígidas por hueso.
-export function assembleCharacter({ P, bodyScene, bodyPaint, bodyCell = 0.0125, material }) {
-  const S = buildSkeleton(P);
+export function assembleCharacter({ P, bodyScene, bodyPaint, bodyCell = 0.0125, material, fingers = false, bodyAO = null }) {
+  const S = buildSkeleton(P, { fingers });
   const root = new THREE.Group();
   const boneList = BONE_NAMES.map((n) => S.bones[n]);
   const boneIndex = Object.fromEntries(BONE_NAMES.map((n, i) => [n, i]));
   root.add(S.bones.hips);
   root.updateMatrixWorld(true);
   const mesh = surfaceNets(bodyScene, bodyCell);
-  const geo = meshToGeometry(mesh, bodyScene, bodyPaint, { skin: true, boneIndex, sigma: 0.022 });
+  const geo = meshToGeometry(mesh, bodyScene, bodyPaint, { skin: true, boneIndex, sigma: 0.022, ao: bodyAO });
   const skinned = new THREE.SkinnedMesh(geo, material);
   skinned.castShadow = true;
   skinned.receiveShadow = true;

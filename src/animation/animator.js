@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import { POSE, CARRY, ATTACKS, makePose, accumulate, overlay, addPose, mirrorDef } from './poses.js';
+import { POSE, CARRY, ATTACKS, MAGE_CAST, FINGER_POSES, UPPER_MASK, makePose, accumulate, overlay, addPose, mirrorDef } from './poses.js';
 import { solveTwoBone, setBoneWorldQuaternion } from './ik.js';
 import { clamp, lerp, smoothstep, damp, springStep, DEG, easeInOutSine } from '../core/math.js';
 import { EYELID_OPEN } from '../render/heroModel.js';
+import { ORB_PHASES } from '../render/eclipseOrb.js';
 
 // Animador procedural del humanoide:
 // - Locomoción in-place conducida por la física (biblia §13.5): la fase del ciclo avanza con la
@@ -87,6 +88,11 @@ export class Animator {
     this.twin = !!model.foci;
     this.castSide = 'R';
     this.aimW = 0;
+    // Mago: dedos articulados, carga del eclipse por fases y segunda mano que contiene la esfera.
+    this.mage = !!model.fingerRig;
+    this.fingers = { L: { ...FINGER_POSES.relax }, R: { ...FINGER_POSES.relax } };
+    this.castW = 0; this.castT = 0; this.launchW = 0; this.containW = 0; this.stanceK = 1;
+    this.castPose = { orb: new THREE.Vector3(), r: 0 };
   }
 
   // ---- Utilidades de espacio ----
@@ -226,8 +232,47 @@ export class Animator {
       if (ground) addPose(pose, { hip: [0, -0.04 * atkW, 0] });
     }
 
+    // Carga del eclipse: postura por fase. En suelo y parado, todo el cuerpo (piernas flexionadas, base
+    // más ancha); corriendo o en el aire, solo el torso. Al soltar, lanzamiento con el peso adelante.
+    const cast = this.mage ? s.cast : null;
+    const holding = !!(cast && cast.launch == null && !atk);
+    this.castW = damp(this.castW, holding ? 1 : 0, holding ? 0.05 : 0.09, dt);
+    if (cast) this.castT = cast.t;
+    this.launchW = cast && cast.launch != null ? smoothstep(0, 0.05, cast.launch) * (1 - smoothstep(0.26, 0.5, cast.launch)) : 0;
+    // «present»: sostener la esfera erguido y sereno (lámina de frente), sin flexionar las piernas
+    const present = !!(cast && cast.hold === 'present');
+    this.present = present;
+    const legsW = ground && !present ? 1 - runW : 0;
+    const ct = this.castT;
+    const wS = smoothstep(0.0, 0.3, ct), wC = smoothstep(0.3, 1.5, ct), wE = smoothstep(1.5, 3.0, ct);
+    this.castPhaseW = { wS, wC, wE };
+    if (this.mage && (this.castW > 0.001 || this.launchW > 0)) {
+      const body = makePose();
+      accumulate(body, MAGE_CAST.seed, wS * (1 - wC));
+      accumulate(body, MAGE_CAST.condense, wC * (1 - wE));
+      accumulate(body, MAGE_CAST.eclipse, wE);
+      const apply = (src, w) => {
+        for (const k in src) {
+          if (k === 'hip') continue;
+          const m = k === 'hips' ? legsW : (UPPER_MASK[k] ?? 0);
+          if (!m) continue;
+          const o = pose[k] || (pose[k] = [0, 0, 0]);
+          o[0] += src[k][0] * w * m; o[1] += src[k][1] * w * m; o[2] += src[k][2] * w * m;
+        }
+        pose.hip[0] += src.hip[0] * w * legsW; pose.hip[1] += src.hip[1] * w * legsW; pose.hip[2] += src.hip[2] * w * legsW;
+      };
+      apply(body, this.castW * (present ? 0.25 : 1));
+      // temblor contenido al sostener el eclipse
+      if (wE > 0.3) {
+        const tr = wE * this.castW;
+        addPose(pose, { chest: [Math.sin(this.time * 29) * 0.5 * tr, 0, Math.sin(this.time * 23) * 0.4 * tr], clavR: [0, 0, Math.sin(this.time * 37) * 0.8 * tr] });
+      }
+      if (this.launchW > 0) apply(MAGE_CAST.launch, this.launchW);
+    }
+    this.stanceK = damp(this.stanceK, 1 + (wC * 1.1 + wE * 0.55) * this.castW * legsW + this.launchW * 0.9 * legsW, 0.12, dt);
+
     // Brazales gemelos: el brazo del lado de la cámara lanza; al mirar a la izquierda se refleja la pose.
-    if (this.twin) this.castSide = this.yaw >= 0 ? 'R' : 'L';
+    if (this.twin) this.castSide = this.forceCast || (this.yaw >= 0 ? 'R' : 'L');
     const mirrored = this.castSide === 'L';
     if (mirrored) {
       const mp = mirrorDef(pose);
@@ -282,8 +327,9 @@ export class Animator {
     this.groundPrev = ground;
 
     // 6) Brazo del arma (IK + orientación de la hoja o del foco).
+    this.containW = 0;
     if (this.opts.hasSword && this.focus[this.castSide]) {
-      const target = { hand: carry.hand.slice(), blade: carry.blade.slice() };
+      const target = { hand: carry.hand.slice(), blade: carry.blade.slice(), palm: carry.palm ? carry.palm.slice() : null };
       // seguir el desplazamiento de la pelvis
       target.hand[0] += pose.hip[0]; target.hand[1] += pose.hip[1] + (ground ? this.landSpring.x : 0); target.hand[2] += pose.hip[2];
       if (atkKey) {
@@ -301,7 +347,7 @@ export class Animator {
         _v.fromArray(target.blade).applyAxisAngle(_v2.set(1, 0, 0), this.rollAngle);
         target.blade = _v.toArray();
       }
-      if (mirrored) { target.hand[0] = -target.hand[0]; target.blade[0] = -target.blade[0]; }
+      if (mirrored) { target.hand[0] = -target.hand[0]; target.blade[0] = -target.blade[0]; if (target.palm) target.palm[0] = -target.palm[0]; }
       // Apuntado (conjuros): el puño sigue la dirección de tiro desde el hombro, con retroceso.
       this.aimW = damp(this.aimW, s.aim && s.aimW ? s.aimW : 0, s.aimW > this.aimW ? 0.02 : 0.12, dt);
       if (this.aimW > 0.001 && s.aim && !atk) {
@@ -312,16 +358,22 @@ export class Animator {
         const reach = 0.5 - (s.recoil || 0) * 0.07;
         const aimHand = [shoulder[0] + la.x * reach, shoulder[1] + la.y * reach - 0.02, shoulder[2] + la.z * reach + 0.04];
         const w = this.aimW;
+        // mago: la palma empuja hacia el blanco con los dedos hacia arriba
+        const fing = this.mage ? this.perpUp(la, _v4) : la;
         for (let i = 0; i < 3; i++) {
           target.hand[i] = lerp(target.hand[i], aimHand[i], w);
-          target.blade[i] = lerp(target.blade[i], la.getComponent(i), w);
+          target.blade[i] = lerp(target.blade[i], fing.getComponent(i), w);
+          if (target.palm) target.palm[i] = lerp(target.palm[i], la.getComponent(i), w);
         }
       }
+      if (this.mage && s.aim && (this.castW > 0.001 || this.launchW > 0) && !atk) this.castTargets(s, target);
       const both = this.opts.alwaysTwoHands && s.mode !== 'dead' && s.mode !== 'hit' ? 1 : 0;
       this.solveSwordArm(target, dt, Math.max(both, atk && atk.twoHands ? atkW : 0), this.twin && !atk ? 'palm' : 'sword');
     }
+    if (this.mage && this.containW > 0.01) this.solveContain();
     if (s.mode === 'hang' || s.mode === 'mantle') this.solveHang(s);
     if (s.mode === 'interact' && s.interact && s.interact.point) this.solveReach(s);
+    if (this.mage) this.updateFingers(dt, s, ground && runW > 0.4);
 
     // 7) Secundarios: parpadeo y coleta.
     this.updateBlink(dt);
@@ -357,15 +409,17 @@ export class Animator {
     const sp = smoothstep(2.5, 8, speed);
     return {
       hand: [c.hand[0], c.hand[1] + 0.02 * Math.sin(2 * ph), c.hand[2] - 0.13 * Math.cos(ph) * lerp(0.5, 1, sp)],
-      blade: c.blade,
+      blade: c.blade, palm: c.palm,
     };
   }
 
   blendCarry(a, bb, t) {
-    return {
+    const out = {
       hand: [lerp(a.hand[0], bb.hand[0], t), lerp(a.hand[1], bb.hand[1], t), lerp(a.hand[2], bb.hand[2], t)],
       blade: [lerp(a.blade[0], bb.blade[0], t), lerp(a.blade[1], bb.blade[1], t), lerp(a.blade[2], bb.blade[2], t)],
     };
+    if (a.palm && bb.palm) out.palm = [lerp(a.palm[0], bb.palm[0], t), lerp(a.palm[1], bb.palm[1], t), lerp(a.palm[2], bb.palm[2], t)];
+    return out;
   }
 
   sampleAttack(atk, t) {
@@ -469,7 +523,7 @@ export class Animator {
         }
         this.gait = false;
       }
-      const restRel = o.restRel;
+      const restRel = { L: o.restRel.L * this.stanceK, R: o.restRel.R * this.stanceK };
       const anySwing = feet.L.swing || feet.R.swing;
       for (const k of ['L', 'R']) {
         const f = feet[k];
@@ -559,8 +613,10 @@ export class Animator {
     if (edgeT.lengthSq() < 1e-4) edgeT.copy(this.edge);
     edgeT.normalize();
     if (edgeMode === 'palm') {
-      // puño de conjuro: palma hacia abajo (hacia atrás al apuntar en vertical), sin volteos
-      edgeT.set(0, -1, 0).addScaledVector(this.toWorldDir(_v4.set(0, 0, -1), new THREE.Vector3()), 0.35);
+      // puño de conjuro: palma hacia abajo (hacia atrás al apuntar en vertical), sin volteos;
+      // con mano abierta (mago) la normal de la palma viene del objetivo
+      if (target.palm) this.toWorldDir(_v4.fromArray(target.palm).normalize(), edgeT);
+      else edgeT.set(0, -1, 0).addScaledVector(this.toWorldDir(_v4.set(0, 0, -1), new THREE.Vector3()), 0.35);
       edgeT.addScaledVector(bladeW, -edgeT.dot(bladeW));
       if (edgeT.lengthSq() < 1e-4) edgeT.copy(this.edge);
       edgeT.normalize();
@@ -601,6 +657,162 @@ export class Animator {
     }
   }
 
+  // Dirección perpendicular a `la` en el plano vertical que lo contiene, hacia arriba (espacio local).
+  perpUp(la, out) {
+    const f = Math.hypot(la.x, la.z);
+    // componente horizontal (adelante) y vertical; en vertical puro, «arriba» es hacia atrás
+    const hx = f > 1e-3 ? la.x / f : 0, hz = f > 1e-3 ? la.z / f : 1;
+    out.set(-la.y * hx, f, -la.y * hz);
+    return out.normalize();
+  }
+
+  // Objetivos de la mano que sostiene la esfera (y del lanzamiento) en espacio del personaje.
+  castTargets(s, target) {
+    const side = this.castSide;
+    const la = this.root.worldToLocal(_v.set(s.x + s.aim.x, s.y + s.aim.y, 0)).sub(this.root.worldToLocal(_v2.set(s.x, s.y, 0))).normalize();
+    const sh = this.root.worldToLocal(this.b['arm' + side].getWorldPosition(_v3));
+    const { wC, wE } = this.castPhaseW;
+    const r = ORB_PHASES.radiusAt(this.castT);
+    // palma hacia arriba, algo inclinada hacia el blanco; dedos hacia delante
+    const pn = new THREE.Vector3(0, 1, 0).addScaledVector(la, 0.3).normalize();
+    const fd = la.clone().addScaledVector(pn, -la.dot(pn));
+    if (fd.lengthSq() < 1e-4) fd.set(0, 0, 1);
+    fd.normalize();
+    const reach = lerp(0.3, 0.36, wC) + wE * 0.04;
+    const drop = lerp(0.22, 0.2, wC) + r * 0.35;
+    const hold = new THREE.Vector3().copy(sh).addScaledVector(la, reach);
+    hold.y -= drop;
+    // la mano se separa del cuerpo hacia el lado de cámara para que la esfera no lo atraviese
+    hold.x += (side === 'R' ? -1 : 1) * (0.04 + wE * 0.04);
+    if (this.present) {
+      // a la altura del pecho, adelantada y abierta hacia fuera; dedos hacia delante y afuera
+      const out = side === 'R' ? -1 : 1;
+      hold.set(sh.x + out * 0.13, sh.y - 0.2 - r * 0.4, sh.z + 0.27);
+      pn.set(out * 0.15, 1, 0.1).normalize();
+      fd.set(out * 0.55, 0, 1).addScaledVector(pn, -0.0).normalize();
+      fd.addScaledVector(pn, -fd.dot(pn)).normalize();
+    }
+    const w = this.castW;
+    for (let i = 0; i < 3; i++) {
+      target.hand[i] = lerp(target.hand[i], hold.getComponent(i), w);
+      target.blade[i] = lerp(target.blade[i], fd.getComponent(i), w);
+      if (target.palm) target.palm[i] = lerp(target.palm[i], pn.getComponent(i), w);
+    }
+    // lanzamiento: brazo extendido, palma hacia el blanco, dedos abiertos hacia arriba
+    if (this.launchW > 0) {
+      const lw = this.launchW;
+      const ext = new THREE.Vector3().copy(sh).addScaledVector(la, 0.6);
+      ext.y -= 0.03;
+      const up = this.perpUp(la, new THREE.Vector3());
+      for (let i = 0; i < 3; i++) {
+        target.hand[i] = lerp(target.hand[i], ext.getComponent(i), lw);
+        target.blade[i] = lerp(target.blade[i], up.getComponent(i), lw);
+        if (target.palm) target.palm[i] = lerp(target.palm[i], la.getComponent(i), lw);
+      }
+    }
+    // centro de la esfera (local) para la segunda mano
+    const orb = this.castPose.orb.copy(hold).addScaledVector(pn, r * 1.05 + 0.022);
+    this.castPose.r = r;
+    this.castPose.la = la.clone();
+    this.containW = wE * this.castW * (1 - this.launchW);
+    void orb;
+  }
+
+  // La segunda mano ayuda a contener el eclipse: se apoya por encima y por detrás de la esfera.
+  solveContain() {
+    const side = this.castSide === 'R' ? 'L' : 'R';
+    const F = this.focus[side];
+    if (!F) return;
+    const sg = side === 'L' ? 1 : -1;
+    const { orb, r, la } = this.castPose;
+    const dirL = new THREE.Vector3(0.55 * sg, 0.62, -0.3).normalize();
+    const gripL = orb.clone().addScaledVector(dirL, r + 0.032);
+    const gripW = this.toWorldPoint(gripL, new THREE.Vector3());
+    const palmW = this.toWorldDir(dirL.clone().negate(), new THREE.Vector3());
+    const fingL = (la || new THREE.Vector3(0, 0, 1)).clone();
+    fingL.addScaledVector(dirL, -fingL.dot(dirL)).normalize();
+    const fingW = this.toWorldDir(fingL, new THREE.Vector3());
+    this.placeHand(side, gripW, fingW, palmW, this.containW);
+  }
+
+  // Coloca una mano abierta: centro de la palma en gripW, dedos hacia fingW y palma hacia palmW.
+  placeHand(side, gripW, fingW, palmW, w) {
+    const b = this.b, F = this.focus[side];
+    const E = palmW.clone().addScaledVector(fingW, -palmW.dot(fingW)).normalize();
+    const cL = new THREE.Vector3().crossVectors(F.axisL, F.edgeL);
+    const cW = new THREE.Vector3().crossVectors(fingW, E);
+    _m1.makeBasis(F.axisL, F.edgeL, cL);
+    _m2.makeBasis(fingW, E, cW);
+    _m2.multiply(_m1.transpose());
+    const handQ = new THREE.Quaternion().setFromRotationMatrix(_m2);
+    const wrist = gripW.clone().sub(F.gripL.clone().applyQuaternion(handQ));
+    const sgn = side === 'R' ? 1 : -1;
+    b['arm' + side].getWorldPosition(_v);
+    const pole = _v.clone().add(this.toWorldDir(new THREE.Vector3(-0.5 * sgn, -0.5, -0.35), new THREE.Vector3()));
+    solveTwoBone(b['arm' + side], b['fore' + side], b['hand' + side], wrist, pole, w);
+    const cur = b['hand' + side].getWorldQuaternion(new THREE.Quaternion());
+    setBoneWorldQuaternion(b['hand' + side], cur.slerp(handQ, w));
+  }
+
+  // Gestos de los dedos según la acción, con transición suave y un temblor leve al tensarlos.
+  updateFingers(dt, s, running) {
+    const rig = this.m.fingerRig;
+    const cs = this.castSide, os = cs === 'R' ? 'L' : 'R';
+    const P = FINGER_POSES;
+    const { wC, wE } = this.castPhaseW;
+    let cp = P.relax, op = P.relax, cw = 1, ow = 1;
+    if (running) { cp = P.loose; op = P.loose; }
+    if (s.mode === 'air' || s.mode === 'attackAir') { cp = P.cup; op = P.relax; }
+    if (s.mode === 'dash' || s.mode === 'airdash' || s.mode === 'roll') { cp = P.open; op = P.open; }
+    if (s.mode === 'hang' || s.mode === 'mantle') { cp = P.grip; op = P.grip; }
+    if (s.mode === 'hit' || s.mode === 'dead') { cp = P.open; op = P.loose; }
+    if (s.attack) cp = P.push;
+    if (this.aimW > 0.3 && !(this.castW > 0.3)) cp = P.push;
+    const mix = (a, b, t) => ({ curl: lerp(a.curl, b.curl, t), spread: lerp(a.spread, b.spread, t), thumb: lerp(a.thumb, b.thumb, t), tense: lerp(a.tense, b.tense, t) });
+    if (this.castW > 0.05) {
+      // semilla: palma en cuenco; condensación y eclipse: dedos tensos que sujetan la fuerza
+      const hold = mix(P.cup, P.claw, clamp(wC * 0.7 + wE * 0.3, 0, 1));
+      cp = mix(cp, hold, this.castW); cw = 1;
+      op = mix(op, mix(mix(P.relax, P.claw, wC * 0.6), P.contain, wE), this.castW);
+    }
+    if (this.launchW > 0.05) cp = mix(cp, P.open, this.launchW);
+    const tgt = { [cs]: cp, [os]: op };
+    void cw; void ow;
+    for (const L of ['L', 'R']) {
+      const st = this.fingers[L], t = tgt[L];
+      const k = clamp(dt / 0.07, 0, 1);
+      st.curl += (t.curl - st.curl) * k; st.spread += (t.spread - st.spread) * k;
+      st.thumb += (t.thumb - st.thumb) * k; st.tense += (t.tense - st.tense) * k;
+      this.applyFingers(L, st, rig[L]);
+    }
+  }
+
+  applyFingers(L, st, rig) {
+    const sideSign = L === 'L' ? 1 : -1;
+    const spreadW = { idx: 1, mid: 0.15, rng: -0.75, pky: -1.5 };
+    const extraCurl = { idx: -0.04, mid: 0, rng: 0.05, pky: 0.1 };
+    const T = this.time;
+    for (let i = 0; i < rig.fingers.length; i++) {
+      const fg = rig.fingers[i];
+      const tr = st.tense * 0.025 * Math.sin(T * (31 + i * 3.7) + i * 1.9);
+      if (fg.name === 'thb') {
+        const th = st.thumb + tr;
+        _q2.setFromAxisAngle(fg.spread, -st.spread * 0.35 * sideSign);
+        fg.bones[0].quaternion.setFromAxisAngle(fg.axis, th * 0.55).premultiply(_q2);
+        fg.bones[1].quaternion.setFromAxisAngle(fg.axis, th * 0.6);
+        fg.bones[2].quaternion.setFromAxisAngle(fg.axis, th * 0.75);
+      } else {
+        const c = st.curl + (extraCurl[fg.name] || 0) * Math.max(0, st.curl) + tr;
+        // con tensión los dedos se arquean: menos nudillo y más falange media (garra)
+        const mcp = c * (1.4 - st.tense * 0.45), pip = c * (1.65 + st.tense * 0.2), dip = c * (1.05 + st.tense * 0.15);
+        _q2.setFromAxisAngle(fg.spread, st.spread * 0.16 * spreadW[fg.name] * sideSign);
+        fg.bones[0].quaternion.setFromAxisAngle(fg.axis, mcp).premultiply(_q2);
+        fg.bones[1].quaternion.setFromAxisAngle(fg.axis, pip);
+        fg.bones[2].quaternion.setFromAxisAngle(fg.axis, dip);
+      }
+    }
+  }
+
   solveHang(s) {
     const b = this.b;
     if (!s.ledge) return;
@@ -638,7 +850,7 @@ export class Animator {
       c = u < 1 ? Math.sin(u * Math.PI) : 0;
       if (u >= 1) { this.blink.t = 0; this.blink.next = 2.2 + Math.random() * 3.2; }
     }
-    for (const e of eyes) e.lid.rotation.x = EYELID_OPEN + c * 0.95;
+    for (const e of eyes) e.lid.rotation.x = (e.open ?? EYELID_OPEN) + c * 0.95;
   }
 
   updateTail(dt) {

@@ -279,3 +279,43 @@ export const INTERACT = {
   pickup: { duration: 1.5 },
   socket: { duration: 0.9 },
 };
+
+// Mago de sombras: la mano de lanzar va abierta. hand = centro de la palma; blade = dirección de los
+// dedos; palm = normal de la palma (todo en espacio del personaje, brazo derecho = lado de cámara).
+export const MAGE_CARRY = {
+  idle: { hand: [-0.25, 0.87, 0.05], blade: [0.04, -1, 0.1], palm: [1, 0.05, 0.2] },
+  run: { hand: [-0.22, 0.98, 0.12], blade: [0.0, -0.75, 0.66], palm: [1, 0, 0] },
+  jump: { hand: [-0.3, 1.22, 0.1], blade: [-0.3, 0.2, 0.93], palm: [0.2, -1, 0] },
+  fall: { hand: [-0.36, 1.3, 0.05], blade: [-0.5, 0.55, 0.67], palm: [0, -1, 0.3] },
+  slide: { hand: [-0.24, 0.6, 0.32], blade: [0.0, -0.15, 1.0], palm: [0, -1, 0] },
+  roll: { hand: [-0.22, 1.1, -0.12], blade: [-0.1, -0.35, -0.93], palm: [1, 0, 0] },
+  dash: { hand: [-0.22, 1.08, -0.2], blade: [-0.1, -0.2, -0.97], palm: [1, 0, 0] },
+  hang: { hand: [-0.16, 1.98, 0.18], blade: [0.0, 0.25, 0.97], palm: [0, -1, 0.2] },
+  hit: { hand: [-0.33, 1.15, 0.05], blade: [-0.4, 0.5, -0.75], palm: [0.4, -0.8, 0] },
+  kneel: { hand: [-0.3, 0.75, 0.25], blade: [-0.05, -0.85, 0.5], palm: [1, 0, 0] },
+  dead: { hand: [-0.45, 0.25, 0.3], blade: [-0.6, -0.1, 0.8], palm: [0, -1, 0] },
+};
+
+// Carga del eclipse (aditivas, en grados) por fase y lanzamiento: la carga se nota en todo el cuerpo.
+// La semilla apenas inclina la cabeza hacia la palma; la condensación flexiona las piernas y prepara
+// el torso; el eclipse afirma la base y sube los hombros; el lanzamiento lleva el peso adelante y gira
+// el torso hacia el blanco con el brazo extendido.
+export const MAGE_CAST = {
+  seed: makePose({ hip: [0, -0.025, 0], spine: [3, -6, 0], chest: [3, -8, 0], neck: [6, 4, 0], head: [10, 6, 0], clavR: [0, 0, 2] }),
+  condense: makePose({ hip: [0, -0.1, -0.01], hips: [4, 0, 0], spine: [6, -10, 0], chest: [3, -10, 0], neck: [4, 6, 0], head: [8, 6, 0], clavR: [0, 4, 4], clavL: [0, -2, -3], armL: [-18, 0, 6], foreL: [-30, 0, 0] }),
+  eclipse: makePose({ hip: [0, -0.15, -0.02], hips: [5, 0, 0], spine: [6, -14, 0], chest: [3, -12, -2], neck: [2, 6, 0], head: [6, 4, 0], clavR: [0, 6, 6], clavL: [0, -4, -6] }),
+  launch: makePose({ hip: [0, -0.1, 0.1], hips: [8, 10, 0], spine: [10, 16, 0], chest: [6, 18, -3], neck: [-6, -10, 0], head: [-6, -12, 0], clavR: [0, -8, 0], armL: [30, 0, 30], foreL: [-25, 0, 0] }),
+};
+
+// Gestos de los dedos: flexión media (0 = estirados, 1 = puño), abanico (separación) y pulgar.
+export const FINGER_POSES = {
+  relax: { curl: 0.28, spread: 0.12, thumb: 0.25, tense: 0 },
+  loose: { curl: 0.5, spread: 0.05, thumb: 0.35, tense: 0 },
+  fist: { curl: 1.0, spread: 0.0, thumb: 0.9, tense: 0 },
+  grip: { curl: 0.82, spread: 0.08, thumb: 0.7, tense: 0 },
+  cup: { curl: 0.36, spread: 0.38, thumb: 0.2, tense: 0.1 },
+  claw: { curl: 0.55, spread: 0.75, thumb: 0.45, tense: 1 },
+  contain: { curl: 0.42, spread: 0.55, thumb: 0.3, tense: 0.6 },
+  open: { curl: -0.06, spread: 0.95, thumb: -0.1, tense: 0.4 },
+  push: { curl: 0.08, spread: 0.6, thumb: 0.05, tense: 0.2 },
+};

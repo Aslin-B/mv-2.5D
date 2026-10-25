@@ -5,6 +5,8 @@ import * as THREE from 'three';
 // y la sombra usa la misma geometría que el pase principal (§9.4).
 
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _p = new THREE.Vector3();
+// canal verde lineal del color base (normaliza la variación del forro)
+const b2s = (hex) => new THREE.Color(hex).g.toFixed(4);
 
 function capeTexture({ base = '#365456', hem = '#3d2c1f', line = '#9a7a4e', ragged = false } = {}) {
   const c = document.createElement('canvas');
@@ -49,15 +51,86 @@ function capeTexture({ base = '#365456', hem = '#3d2c1f', line = '#9a7a4e', ragg
   return t;
 }
 
+// Faldones de abrigo: cuero carbón con veteado, bordado de volutas plateadas junto a la abertura
+// y en el bajo. Devuelve color, relieve (bordado en alto) y rugosidad/metal (canales G/B).
+function coatTextures({ base = '#29262c', line = '#b3b0b8' } = {}) {
+  const W = 256, H = 512;
+  const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
+  const col = mk(), bump = mk(), orm = mk();
+  const cc = col.getContext('2d'), bc = bump.getContext('2d'), oc = orm.getContext('2d');
+  const ci = cc.createImageData(W, H), bi = bc.createImageData(W, H), oi = oc.createImageData(W, H);
+  const b = new THREE.Color(base), l = new THREE.Color(line);
+  const hh = (i, j) => { const s = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return s - Math.floor(s); };
+  const fil = (u, v, w) => {
+    const i = Math.floor(u), j = Math.floor(v);
+    let fu = u - i; const fv = v - j;
+    if (hh(i, j) > 0.5) fu = 1 - fu;
+    const d = Math.min(Math.abs(Math.hypot(fu, fv) - 0.5), Math.abs(Math.hypot(fu - 1, fv - 1) - 0.5));
+    return Math.max(0, Math.min(1, (w - d) / (w * 0.45)));
+  };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = (y * W + x) * 4;
+    const u = x / (W - 1), v = 1 - y / (H - 1);   // v = 1 arriba (cintura), 0 en el bajo
+    // grano y manchas del cuero
+    const g = 0.86 + 0.14 * Math.random() * Math.random() + 0.06 * Math.sin(x * 0.21 + Math.sin(y * 0.05) * 3) * Math.sin(y * 0.09);
+    let r = b.r * g, gg = b.g * g, bb = b.b * g;
+    let emb = 0;
+    // bordado: banda junto a la abertura central (u ≈ 0,5), banda del bajo y un filete fino
+    const du = Math.abs(u - 0.5);
+    const band = du > 0.012 && du < 0.06 ? fil(du / 0.024 + 0.3, v / 0.012, 0.11) : 0;
+    const hem = v > 0.02 && v < 0.085 ? fil(u / 0.012, (v - 0.02) / 0.022 + 0.2, 0.11) : 0;
+    const pip = Math.abs(du - 0.07) < 0.003 || Math.abs(v - 0.1) < 0.002 ? 0.8 : 0;
+    emb = Math.max(band, hem, pip);
+    if (du < 0.012 || v < 0.018) { r *= 0.55; gg *= 0.55; bb *= 0.55; }   // canto oscuro
+    r = r * (1 - emb) + l.r * emb * (0.75 + Math.random() * 0.25);
+    gg = gg * (1 - emb) + l.g * emb * (0.75 + Math.random() * 0.25);
+    bb = bb * (1 - emb) + l.b * emb * (0.75 + Math.random() * 0.25);
+    ci.data[i] = Math.min(255, r * 255); ci.data[i + 1] = Math.min(255, gg * 255); ci.data[i + 2] = Math.min(255, bb * 255); ci.data[i + 3] = 255;
+    const h = 0.35 + emb * 0.55 + (Math.random() - 0.5) * 0.08;
+    bi.data[i] = bi.data[i + 1] = bi.data[i + 2] = h * 255; bi.data[i + 3] = 255;
+    oi.data[i] = 255; oi.data[i + 1] = (0.62 - emb * 0.3) * 255; oi.data[i + 2] = emb * 255; oi.data[i + 3] = 255;
+  }
+  cc.putImageData(ci, 0, 0); bc.putImageData(bi, 0, 0); oc.putImageData(oi, 0, 0);
+  const tex = (c, srgb) => { const t = new THREE.CanvasTexture(c); if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; };
+  return { map: tex(col, true), bumpMap: tex(bump, false), orm: tex(orm, false) };
+}
+
 export class Cape {
-  constructor(model, scene, { cols = 5, rows = 10, length = 0.74, palette = null, anchors = null, bone = 'chest', drag = 0.965 } = {}) {
+  constructor(model, scene, { cols = 5, rows = 10, length = 0.74, palette = null, anchors = null, bone = 'chest', drag = 0.965, liningFlip = false, outward = 0.02, flare = 0.13, gather = 1 } = {}) {
+    // flare: ensanche del bajo respecto al talle (vuelo de la falda del abrigo); gather: tela de más
+    // entre anclajes, que se recoge en pliegues verticales
+    this.flare = flare;
+    this.gather = gather;
     this.model = model;
     this.bone = bone;
     this.drag = drag;
+    this.outward = outward;
     this.cols = cols; this.rows = rows; this.length = length;
     this.panels = [];
     const ragged = palette && palette.ragged;
-    const mat = new THREE.MeshStandardMaterial({ map: capeTexture(palette || {}), roughness: 0.92, side: THREE.DoubleSide, envMapIntensity: 0.5, alphaTest: ragged ? 0.5 : 0 });
+    let mat;
+    if (palette && palette.style === 'coat') {
+      const T = coatTextures(palette);
+      mat = new THREE.MeshStandardMaterial({ map: T.map, bumpMap: T.bumpMap, bumpScale: 1.6, roughnessMap: T.orm, metalnessMap: T.orm, roughness: 1, metalness: 1, side: THREE.DoubleSide, envMapIntensity: 0.8 });
+      // Forro: la cara interior es violeta, mate y sin bordado.
+      const lin = new THREE.Color(palette.lining || '#4c2a70');
+      mat.onBeforeCompile = (sh) => {
+        sh.uniforms.uLining = { value: lin };
+        sh.uniforms.uFlip = { value: liningFlip ? 1 : 0 };
+        sh.fragmentShader = sh.fragmentShader
+          .replace('#include <common>', '#include <common>\nuniform vec3 uLining;\nuniform float uFlip;')
+          .replace('#include <map_fragment>', `#include <map_fragment>
+bool clothOuter = gl_FrontFacing;
+if (!clothOuter) diffuseColor.rgb = uLining * (0.75 + 0.5 * diffuseColor.g / max(0.02, ${b2s(palette.base || '#29262c')}));`)
+          .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+if (!clothOuter) roughnessFactor = 0.8;`)
+          .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
+if (!clothOuter) metalnessFactor = 0.0;`);
+      };
+      mat.customProgramCacheKey = () => 'coat-v1-' + (liningFlip ? 1 : 0);
+    } else {
+      mat = new THREE.MeshStandardMaterial({ map: capeTexture(palette || {}), roughness: 0.92, side: THREE.DoubleSide, envMapIntensity: 0.5, alphaTest: ragged ? 0.5 : 0 });
+    }
     this.material = mat;
     for (const side of ['L', 'R']) {
       const n = cols * rows;
@@ -122,14 +195,36 @@ export class Cape {
       const { pos, prev } = P;
       const C = this.cols, R = this.rows;
       if (!P.init) {
+        const o = this.model.bones[this.bone].getWorldPosition(new THREE.Vector3());
         for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
           const i = r * C + c;
           this.anchorWorld(P, c, pos[i]);
+          // arranca ya abierta en cono (el vuelo del bajo) para que la tela no se aplane al asentarse
+          _a.set(pos[i].x - o.x, 0, pos[i].z - o.z);
+          const rad = _a.length() || 1;
+          pos[i].addScaledVector(_a, (this.flare * 0.6 * r) / (R - 1));
+          // pliegues alternos hacia dentro y hacia fuera (la tela recogida empieza ya plegada)
+          if (this.gather > 1 && r > 0) pos[i].addScaledVector(_a, ((c % 2 ? 1 : -1) * 0.028 * Math.min(1, r / 3)) / rad);
           pos[i].y -= r * segV;
-          pos[i].z -= 0.02 * r;
+          pos[i].z -= this.outward * r;
           prev[i].copy(pos[i]);
         }
         P.init = true;
+        // cara delantera = exterior: si la normal geométrica mira hacia el cuerpo, invertir el orden
+        if (!P.oriented) {
+          const C2 = this.cols;
+          const a = pos[C2 + 1], b = pos[2 * C2 + 1], c = pos[C2 + 2];
+          _a.subVectors(b, a); _b.subVectors(c, a);
+          const n = _p.crossVectors(_a, _b);
+          const o = this.model.bones[this.bone].getWorldPosition(new THREE.Vector3());
+          const out = new THREE.Vector3().subVectors(a, o); out.y = 0;
+          if (n.dot(out) < 0) {
+            const ix = P.geo.index.array;
+            for (let k = 0; k < ix.length; k += 3) { const t2 = ix[k + 1]; ix[k + 1] = ix[k + 2]; ix[k + 2] = t2; }
+            P.geo.index.needsUpdate = true;
+          }
+          P.oriented = true;
+        }
       }
       // Integración
       const t = this.clock;
@@ -145,19 +240,23 @@ export class Cape {
         p.z += Math.sin(t * 1.7 + c * 1.3) * 0.15 * dt * dt * (r / R);
       }
       // Restricciones
-      const segH = [];
+      const segH = [], segH2 = [];
       for (let c = 0; c < C - 1; c++) {
         this.anchorWorld(P, c, _a); this.anchorWorld(P, c + 1, _b);
         segH.push(_a.distanceTo(_b) * (1 + 0.04));
+        if (c < C - 2) { this.anchorWorld(P, c + 2, _b); segH2.push(_a.distanceTo(_b) * (1 + 0.04)); }
       }
       for (let it = 0; it < 6; it++) {
         for (let c = 0; c < C; c++) this.anchorWorld(P, c, pos[c]);
         for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
           const i = r * C + c;
           if (r < R - 1) this.constrain(pos, i, i + C, segV, r === 0);
-          if (c < C - 1) this.constrain(pos, i, i + 1, segH[c] * (1 + r * 0.012), r === 0);
-          if (r < R - 1 && c < C - 1) this.constrain(pos, i, i + C + 1, Math.hypot(segV, segH[c]), r === 0);
+          const wide = (r === 0 ? 1 : this.gather) + this.flare * r / (R - 1);
+          if (c < C - 1) this.constrain(pos, i, i + 1, segH[c] * wide, r === 0);
+          if (r < R - 1 && c < C - 1) this.constrain(pos, i, i + C + 1, Math.hypot(segV, segH[c] * (wide + this.flare * 0.5 / (R - 1))), r === 0);
           if (r < R - 2) this.constrain(pos, i, i + 2 * C, segV * 2, r === 0, 0.5);
+          // flexión horizontal: conserva la curvatura del talle a lo largo de la falda (cono, no tabla)
+          if (c < C - 2 && r > 0) this.constrain(pos, i, i + 2, segH2[c] * wide * (this.gather > 1 ? 0.86 : 1), false, 0.4);
         }
         // Colisión con cápsulas
         for (let i = C; i < pos.length; i++) this.collide(pos[i]);

@@ -57,6 +57,26 @@ export function ellipsoid(c, r, extra = {}) {
   };
 }
 
+// Elipsoide con ejes propios (u, v, w ortonormales): palmas, pómulos, mandíbula, falanges anchas.
+export function orientedEllipsoid(c, axes, r, extra = {}) {
+  const [u, v, w] = axes;
+  const m = Math.max(r[0], r[1], r[2]);
+  return {
+    ...extra, c, r,
+    min: [c[0] - m, c[1] - m, c[2] - m],
+    max: [c[0] + m, c[1] + m, c[2] + m],
+    d(px, py, pz) {
+      const dx = px - c[0], dy = py - c[1], dz = pz - c[2];
+      const lx = dx * u[0] + dy * u[1] + dz * u[2], ly = dx * v[0] + dy * v[1] + dz * v[2], lz = dx * w[0] + dy * w[1] + dz * w[2];
+      const x = lx / r[0], y = ly / r[1], z = lz / r[2];
+      const k0 = Math.sqrt(x * x + y * y + z * z);
+      const x1 = x / r[0], y1 = y / r[1], z1 = z / r[2];
+      const k1 = Math.sqrt(x1 * x1 + y1 * y1 + z1 * z1);
+      return k1 === 0 ? -Math.min(r[0], r[1], r[2]) : (k0 * (k0 - 1)) / k1;
+    },
+  };
+}
+
 // Lámina de grosor constante sobre un elipsoide (placas de armadura con canto visible).
 export function ellipsoidShell(c, r, th, extra = {}) {
   const e = ellipsoid(c, r);
@@ -113,15 +133,17 @@ export class SdfScene {
     for (let i = 0; i < prims.length; i++) {
       const d = prims[i].d(px, py, pz);
       if (d < dmin) dmin = d;
-      s += Math.exp(-d / k);
+      // «blend» propio: rasgos finos (labios, párpados, aletas) se funden con un radio menor
+      s += Math.exp(-d / (prims[i].blend || k));
     }
     let d = s > 0 ? -k * Math.log(s) : dmin;
     if (!isFinite(d)) d = dmin;
     for (let i = 0; i < subs.length; i++) {
       // Sustracción suave (IQ): mezcla(d, -dc, h) con h según la cercanía de ambas superficies.
       const dc = subs[i].d(px, py, pz);
-      const h = Math.min(Math.max(0.5 - 0.5 * (d + dc) / this.subK, 0), 1);
-      d = d + (-dc - d) * h + this.subK * h * (1 - h);
+      const sk = subs[i].blend || this.subK;
+      const h = Math.min(Math.max(0.5 - 0.5 * (d + dc) / sk, 0), 1);
+      d = d + (-dc - d) * h + sk * h * (1 - h);
     }
     if (this.clip) d = Math.max(d, this.clip(px, py, pz));
     return d;
