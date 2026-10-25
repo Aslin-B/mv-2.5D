@@ -95,6 +95,9 @@ varying vec4 vSurf;
 varying vec3 vObjPos;
 ${NOISE}
 ${PERTURB}`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+// esmalte de placa: moteado de forja a baja frecuencia (rompe el aspecto de plástico liso)
+if (vSurf.z > 8.5) diffuseColor.rgb *= 0.88 + 0.2 * fbm3(vObjPos * 22.0);`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
 roughnessFactor = clamp(vSurf.x + (fbm3(vObjPos*70.0)-0.5)*0.12, 0.04, 1.0);`)
       .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
@@ -120,9 +123,13 @@ metalnessFactor = vSurf.y;`)
   totalEmissiveRadiance += cmEdge * cmEdgeTint * edge;
   // runas y ranuras pintadas con el patrón «glow»: emiten su propio color (alimentan el bloom)
   if (vSurf.z > 7.5 && vSurf.z < 8.5) totalEmissiveRadiance += vColor.rgb * cmGlow;
-}`);
+}`)
+      .replace('#include <opaque_fragment>', `#include <opaque_fragment>
+// saneado HDR: una luz puntual muy cercana sobre una placa pulida podía dar valores no finitos en
+// el búfer de media precisión, y el bloom los esparcía como un halo magenta alrededor de Aren
+gl_FragColor.rgb = (any(isnan(gl_FragColor.rgb)) || any(isinf(gl_FragColor.rgb))) ? vec3(0.0) : min(gl_FragColor.rgb, vec3(48.0));`);
   };
-  mat.customProgramCacheKey = () => 'charmat-v5';
+  mat.customProgramCacheKey = () => 'charmat-v7';
   return mat;
 }
 

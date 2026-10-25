@@ -5,9 +5,10 @@ import { triplanarMaterial, bronzeMaterial } from '../render/materials.js';
 import { stoneAshlar, stoneFlags, woodPlanks, ivyCard, shaftTexture, waterNormals, rockFace, bannerTexture, grassCard } from '../render/textures.js';
 import { buildWater, buildWaterfall } from '../render/water.js';
 import { SUN_DIR, Zones, buildMistBand } from '../render/environment.js';
-import { ClavijaPedestal, CaudalFragment, RestFountain, CrackedWall, SocketGate, Trigger } from '../world/mechanisms.js';
+import { ClavijaPedestal, CaudalFragment, RestFountain, CrackedWall, SocketGate, Trigger, RuneBlock } from '../world/mechanisms.js';
 import { mulberry32, valueNoise3 } from '../core/rng.js';
 import { buildSections } from '../render/sections.js';
+import { pipeRun, valveWheel, etherTank, runeGauge, wallShelf, toolRack } from './machinery.js';
 
 // Primer nivel: el Acueducto del Alba (biblia §17), versión corta de cinco salas.
 // Coordenadas en metros: X a la derecha, Y arriba, Z hacia la cámara (z = 0 plano de juego).
@@ -41,16 +42,16 @@ export const MAP_BOUNDS = { x0: -12, x1: 134, y0: -3, y1: 13 };
 export const LIGHT_ZONES = new Zones([
   // Gradación (sh*/hi*: tinte de sombras y luces; con: curva en S; bp: punto negro; sat): cada sala
   // tiene un tono dominante y los acentos luminosos (runas, braseros, saetas) contrastan con él.
-  { x: -100, exposure: 0.92, sun: 4.2, hemi: 0.72, fogD: 0.0095, env: 0.6, fill: 3.2, bloom: 0.32, rim: 0.32, fogColor: '#b49a8f',
-    shR: 0.9, shG: 0.88, shB: 1.08, hiR: 1.06, hiG: 1.0, hiB: 0.9, con: 0.32, bp: 0.02, sat: 1.06 },
-  { x: 21, blend: 3, exposure: 1.3, sun: 4.6, hemi: 0.34, fogD: 0.02, env: 0.32, fill: 3.8, bloom: 0.55, rim: 0.6, fogColor: '#4a3f38',
-    shR: 0.8, shG: 0.95, shB: 1.1, hiR: 1.1, hiG: 0.98, hiB: 0.84, con: 0.4, bp: 0.03, sat: 1.08 },
-  { x: 49, blend: 3, exposure: 0.9, sun: 4.2, hemi: 0.7, fogD: 0.0105, env: 0.6, fill: 3.0, bloom: 0.32, rim: 0.32, fogColor: '#ad9286',
-    shR: 0.84, shG: 0.97, shB: 1.08, hiR: 1.04, hiG: 1.01, hiB: 0.93, con: 0.32, bp: 0.02, sat: 1.06 },
-  { x: 87, blend: 3, exposure: 1.4, sun: 4.4, hemi: 0.3, fogD: 0.018, env: 0.3, fill: 3.8, bloom: 0.6, rim: 0.65, fogColor: '#3e342e',
-    shR: 1.02, shG: 0.84, shB: 0.82, hiR: 1.1, hiG: 0.95, hiB: 0.8, con: 0.42, bp: 0.03, sat: 1.1 },
-  { x: 107, blend: 3, exposure: 0.85, sun: 4.4, hemi: 0.72, fogD: 0.008, env: 0.6, fill: 3.2, bloom: 0.34, rim: 0.32, fogColor: '#bf9c88',
-    shR: 0.9, shG: 0.86, shB: 1.06, hiR: 1.08, hiG: 0.99, hiB: 0.86, con: 0.34, bp: 0.02, sat: 1.06 },
+  { x: -100, exposure: 0.8, sun: 4.2, hemi: 0.72, fogD: 0.0095, env: 0.6, fill: 3.2, bloom: 0.32, rim: 0.46, fogColor: '#a3949a',
+    shR: 0.84, shG: 0.9, shB: 1.16, hiR: 1.07, hiG: 0.99, hiB: 0.86, con: 0.3, bp: 0.015, sat: 1.08 },
+  { x: 21, blend: 3, exposure: 1.85, sun: 4.6, hemi: 0.46, fogD: 0.02, env: 0.4, fill: 4.4, bloom: 0.5, rim: 0.6, fogColor: '#4a3f38',
+    shR: 0.78, shG: 0.94, shB: 1.16, hiR: 1.12, hiG: 0.98, hiB: 0.8, con: 0.26, bp: 0.008, sat: 1.1 },
+  { x: 49, blend: 3, exposure: 0.8, sun: 4.2, hemi: 0.7, fogD: 0.0105, env: 0.6, fill: 3.0, bloom: 0.32, rim: 0.46, fogColor: '#97949e',
+    shR: 0.8, shG: 0.95, shB: 1.16, hiR: 1.05, hiG: 1.0, hiB: 0.9, con: 0.3, bp: 0.015, sat: 1.08 },
+  { x: 87, blend: 3, exposure: 1.95, sun: 4.4, hemi: 0.42, fogD: 0.018, env: 0.4, fill: 4.4, bloom: 0.55, rim: 0.65, fogColor: '#3e342e',
+    shR: 0.86, shG: 0.9, shB: 1.12, hiR: 1.14, hiG: 0.95, hiB: 0.76, con: 0.28, bp: 0.008, sat: 1.1 },
+  { x: 107, blend: 3, exposure: 0.76, sun: 4.4, hemi: 0.72, fogD: 0.008, env: 0.6, fill: 3.2, bloom: 0.34, rim: 0.46, fogColor: '#b0959a',
+    shR: 0.84, shG: 0.88, shB: 1.16, hiR: 1.08, hiG: 0.98, hiB: 0.84, con: 0.3, bp: 0.015, sat: 1.08 },
 ]);
 
 // Encuadre por zona: distancia de cámara y límites horizontales del centro de la vista.
@@ -121,17 +122,17 @@ export function buildLevel01(game, tex) {
   solid(20, 7.6, 48, 14, { grab: false });                   // techo galería
   solid(46.8, 5.6, 48, 14, { grab: false });                 // dintel de salida
   solid(32.4, 1.6, 33.6, 2.6, { surface: 'wood', grab: false, section: false }); // cajas
-  solid(34, 4.2, 41, 4.4, { kind: 'oneway', surface: 'wood' });  // altillo de madera
+  solid(34, 4.2, 41, 4.4, { kind: 'oneway', surface: 'wood', section: false });  // altillo de madera
   solid(41, 4.0, 46.8, 4.4, { grab: false });                // suelo del nicho secreto
   solid(46.0, 4.4, 46.8, 7.6, { grab: false });              // cierre del nicho
   solid(58.2, -6, 63, 1.6, { surface: 'stone' });            // C2
-  solid(63, -6, 67.5, 4.4, { surface: 'stone' });            // pilar arruinado (agarre)
+  solid(63, -6, 67.5, 4.4, { surface: 'stone', sectionTop: 1.05 }); // pilar arruinado (agarre): se ve su sillería
   solid(67.5, -6, 80, 1.6, { surface: 'stone' });            // C3
-  solid(71, 2.65, 75.5, 7.5, { grab: false });               // muro derrumbado: paso bajo
+  solid(71, 2.65, 75.5, 7.5, { grab: false, section: false }); // muro derrumbado: paso bajo
   solid(83, -6, 131, 1.6, { surface: 'stone' });             // taller + terraza
   solid(86, 5.4, 87.2, 14, { grab: false });                 // dintel del taller
   solid(86, 8.0, 106, 14, { grab: false });                  // techo del taller
-  solid(92.5, 3.6, 97.5, 3.9, { surface: 'wood' });          // altillo del pedestal
+  solid(92.5, 3.6, 97.5, 3.9, { surface: 'wood', section: false }); // altillo del pedestal
   solid(104, 6.0, 106, 14, { grab: false });                 // muro sobre la compuerta
   solid(128, -6, 132, 18, { grab: false });                  // torre del extremo derecho
   physics.addVolume({ type: 'water', x0: 55, y0: -8, x1: 58.2, y1: 0.1 });
@@ -230,11 +231,18 @@ export function buildLevel01(game, tex) {
     // primer plano: columna rota y tallos (se desvanecen si tapan a Aren, §8.7)
     foreground.push(fgColumn(scene, mats, -1.2, 0, 3.6, 3.1));
     foreground.push(fgColumn(scene, mats, 15.5, 1.6, 3.4, 4.8));
+    // portada del sello rúnico (los bloques son un mecanismo; esto es su marco de piedra)
+    // (todo por detrás del plano de juego: Aren nunca atraviesa la piedra decorativa)
+    kit.pier(13.2, 1.6, 4.75, -1.0, 0.55, 0.9, mats.stone);
+    kit.pier(15.0, 1.6, 4.75, -1.0, 0.55, 0.9, mats.stone);
+    kit.box(12.85, 4.75, 15.35, 5.15, -1.5, -0.42, mats.stone, { radius: 0.05 });
+    kit.box(13.0, 5.15, 15.2, 5.3, -1.4, -0.55, mats.stone, { radius: 0.04 });
+    runeStrip(scene, 13.0, 15.2, 4.95, -0.4, { glyphs: 1.1 });
     // braseros apagados y linterna
     lantern(scene, mats, lights, -8.2, 0, -2.6, 0.9);
     // lámparas de éter en los pilares del arco
-    etherLamp(scene, mats, tex, -0.5, 3.4, -1.66);
-    etherLamp(scene, mats, tex, 9.0, 3.9, -1.66);
+    etherLamp(scene, mats, tex, -0.5, 3.4, -1.66, { size: 1.35 });
+    etherLamp(scene, mats, tex, 9.0, 3.9, -1.66, { size: 1.35 });
   }
 
   // =====================================================================================
@@ -291,6 +299,20 @@ export function buildLevel01(game, tex) {
     etherLamp(scene, mats, tex, 30.6, 5.1, -2.42);
     etherLamp(scene, mats, tex, 38.6, 5.1, -2.42);
     etherLamp(scene, mats, tex, 45.2, 5.1, -2.42);
+    // maquinaria del acueducto: colector bajo el techo, bajantes a dos depósitos de éter y manómetros
+    pipeRun(batch, mats.bronze, [[21.4, 6.95, -2.42], [46.6, 6.95, -2.42]], { r: 0.11, flange: 2.1, flangeMat: mats.iron });
+    pipeRun(batch, mats.bronze, [[30.95, 6.95, -2.42], [30.95, 3.75, -2.42], [30.95, 3.6, -2.2]], { r: 0.075, flangeMat: mats.iron });
+    pipeRun(batch, mats.bronze, [[37.9, 6.95, -2.42], [37.9, 3.95, -2.42]], { r: 0.075, flangeMat: mats.iron });
+    pipeRun(batch, mats.bronze, [[21.4, 2.25, -2.44], [25.6, 2.25, -2.44], [25.6, 2.9, -2.44], [28.5, 2.9, -2.44]], { r: 0.06, flangeMat: mats.iron });
+    etherTank(scene, batch, mats, tex, updaters, 30.95, y, -2.2, { h: 2.0, r: 0.3, seed: 1 });
+    etherTank(scene, batch, mats, tex, updaters, 37.9, y, -2.15, { h: 2.35, r: 0.36, seed: 2 });
+    valveWheel(batch, mats, 30.95, 5.3, -2.3, 0.2);
+    valveWheel(batch, mats, 37.9, 5.75, -2.3, 0.24);
+    runeGauge(scene, batch, mats, 31.6, 4.55, -2.5, { r: 0.14 });
+    runeGauge(scene, batch, mats, 38.75, 3.15, -2.5, { r: 0.17, color: [0.35, 1.9, 2.4] });
+    runeGauge(scene, batch, mats, 25.6, 3.35, -2.5, { r: 0.12 });
+    wallShelf(batch, mats, rnd, 44.4, 46.6, 3.0, -2.6);
+    wallShelf(batch, mats, rnd, 21.5, 23.4, 3.1, -2.6);
     // pilares delanteros del pórtico (primer plano, translúcidos al tapar)
     foreground.push(fgPier(scene, mats, 28.5, y, 7.6, 2.6));
     foreground.push(fgPier(scene, mats, 41.5, y, 7.6, 2.6));
@@ -327,13 +349,45 @@ export function buildLevel01(game, tex) {
     kit.box(61.9, 1.6, 62.6, 1.95, -1.7, -0.9, mats.stone, { radius: 0.06 });   // sillar caído al pie
     hangIvy(batch, mats, 63.4, 4.3, 1.5, 2.2, 1.0);
     hangIvy(batch, mats, 67.0, 4.3, 1.5, 1.6, 0.8);
-    // muro derrumbado (paso bajo para deslizarse)
-    kit.box(71, 2.65, 75.5, 7.5, -2.2, 1.3, mats.stone, { radius: 0.08 });
+    // muro derrumbado (paso bajo para deslizarse): un tramo del canal superior caído y encajado
+    // sobre la viga; se apoya atrás en dos tocones, la coronación queda rota y gotea agua
+    kit.box(71, 2.65, 75.5, 6.95, -2.2, 1.3, mats.stone, { radius: 0.08 });
+    {
+      const course = 0.46;
+      for (let r = 0; r < 2; r++) {
+        let x = 71 + (r ? 0.35 : 0);
+        while (x < 75.4) {
+          const w = R(0.75, 1.25);
+          const x1 = Math.min(75.5, x + w);
+          if (rnd() > (r ? 0.45 : 0.15) && x1 - x > 0.3) {
+            const y0 = 6.95 + r * course, top = y0 + course - 0.03 - R(0, r ? 0.18 : 0.04);
+            kit.box(x + 0.02, y0, x1 - 0.02, top, -2.2 + R(0, 0.25), 1.3 - R(0, 0.25), mats.stone, { radius: 0.05 });
+          }
+          x = x1;
+        }
+      }
+      // labios del cauce (el tramo era parte de la conducción) y tocones de apoyo detrás del plano
+      kit.box(71, 6.95, 75.5, 7.3, 1.0, 1.42, mats.stoneWet, { radius: 0.04 });
+      kit.box(70.9, 1.6, 71.7, 2.65, -2.1, -0.75, mats.stoneWet, { radius: 0.06 });
+      kit.box(74.8, 1.6, 75.6, 2.65, -2.1, -0.75, mats.stoneWet, { radius: 0.06 });
+      const drip = buildWaterfall({ x: 75.3, y0: 1.6, y1: 6.95, z: -1.0, width: 0.45 });
+      scene.add(drip.mesh);
+      updaters.push((dt, t) => { drip.mat.uniforms.time.value = t * 1.3; });
+    }
     for (let i = 0; i < 9; i++) {
-      const cx = R(71.2, 75.3), cy = R(3.4, 7.2), w = R(0.35, 0.8), hh = R(0.2, 0.32);
+      const cx = R(71.2, 75.3), cy = R(3.4, 6.7), w = R(0.35, 0.8), hh = R(0.2, 0.32);
       kit.box(cx - w, cy - hh, cx + w, cy + hh, R(-2.2, -1.2), R(1.0, 1.55), mats.stone, { radius: 0.05 });
     }
     kit.box(70.7, 2.65, 75.8, 3.05, -2.3, 1.45, mats.wood, { radius: 0.03 }); // viga caída que marca el hueco
+    // coronación del pilar arruinado: sillares sueltos y un fuste roto (detrás del plano de juego)
+    kit.box(63.3, 4.4, 64.4, 4.78, -1.9, -0.7, mats.stone, { radius: 0.05 });
+    kit.box(66.2, 4.4, 67.3, 4.62, -1.8, -0.9, mats.stone, { radius: 0.05 });
+    {
+      const g = new THREE.CylinderGeometry(0.3, 0.33, 1.25, 14);
+      g.translate(64.9, 4.4 + 0.62, -1.35);
+      batch.push(mats.stone, g);
+      kit.box(64.5, 5.6, 65.3, 5.75, -1.75, -0.95, mats.stone, { radius: 0.03 });
+    }
     hangIvy(batch, mats, 73, 2.65, 1.4, 1.2, 3.8);
     // muro del canal al fondo con arcos y caños
     for (let x = 47; x < 87; x += 6.5) {
@@ -343,8 +397,16 @@ export function buildLevel01(game, tex) {
     kit.box(46.4, -3, 87.6, 0.3, -9.8, -8.6, mats.stoneWet, { radius: 0.05 });
     kit.box(46.4, 5.4, 87.6, 6.4, -9.9, -8.5, mats.stone, { radius: 0.05 });
     // agua del canal, cascadas y rueda hidráulica
-    const water = buildWater({ x0: 46, x1: 88, z0: -9, z1: 4, y: wl, normalTex: tex.waterN, foamXs: [55, 58.2, 60.5, 76.6, 80, 83, 48.6, 62.4, 69.9] });
+    // el agua acaba en el plano de sección; delante solo asoma en los huecos abiertos (bajo las
+    // pasarelas el corte negro manda y no se ve una lámina de agua por delante del terreno)
+    const water = buildWater({ x0: 46, x1: 88, z0: -9, z1: 1.9, y: wl, normalTex: tex.waterN, foamXs: [55, 58.2, 60.5, 76.6, 80, 83, 48.6, 62.4, 69.9] });
     scene.add(water.mesh);
+    for (const [gx0, gx1] of [[55, 58.2], [80, 83]]) {
+      const g = new THREE.PlaneGeometry(gx1 - gx0, 2.1, 1, 1);
+      g.rotateX(-Math.PI / 2);
+      g.translate((gx0 + gx1) / 2, wl, 1.9 + 1.05);
+      scene.add(new THREE.Mesh(g, water.mat));
+    }
     updaters.push((dt, t) => { water.mat.uniforms.time.value = t; });
     for (const fx of [60.5, 76.6]) {
       const f = buildWaterfall({ x: fx, y0: wl, y1: 2.8, z: -8.55, width: 2.2 });
@@ -363,8 +425,14 @@ export function buildLevel01(game, tex) {
     grassRow(batch, mats, 58.4, 62.8, y, -2.0, rnd, 6);
     grassRow(batch, mats, 76, 79.8, y, -2.0, rnd, 6);
     // faroles de éter en el muro del canal (se reflejan en el agua)
-    for (const lx of [53.5, 66.5, 79.5]) etherLamp(scene, mats, tex, lx, 5.0, -8.3, { color: 'teal', size: 1.4 });
+    for (const lx of [53.5, 66.5, 79.5]) etherLamp(scene, mats, tex, lx, 5.0, -8.3, { color: 'teal', size: 1.75 });
     runeStrip(scene, 63.4, 67.1, 3.3, 1.64, { glyphs: 1.8 });
+    // conducción maestra sobre el muro del canal y tomas que bajan a los caños
+    pipeRun(batch, mats.bronze, [[46.6, 6.75, -9.15], [87.4, 6.75, -9.15]], { r: 0.2, flange: 3.25, flangeMat: mats.iron });
+    for (const px of [53.5, 66.5, 79.5]) {
+      pipeRun(batch, mats.bronze, [[px + 1.2, 6.75, -9.15], [px + 1.2, 6.75, -8.55], [px + 1.2, 4.2, -8.55]], { r: 0.09, flangeMat: mats.iron });
+      valveWheel(batch, mats, px + 1.2, 5.3, -8.45, 0.22);
+    }
   }
 
   // =====================================================================================
@@ -427,6 +495,23 @@ export function buildLevel01(game, tex) {
     etherLamp(scene, mats, tex, 95.0, 6.3, -2.42);
     foreground.push(fgChain(scene, mats, 98.6, 8, 4.4, 2.8));
     sacks(batch, mats, 102.6, y, -1.8);
+    // condensador de éter del maestro bajo la ventana alta, colector bajo las vigas y bajante al altillo
+    etherTank(scene, batch, mats, tex, updaters, 100.2, y, -2.2, { h: 3.0, r: 0.4, seed: 3 });
+    pipeRun(batch, mats.bronze, [[100.2, y + 3.0, -2.2], [100.2, 4.85, -2.32], [101.75, 4.85, -2.42], [101.75, 7.25, -2.42], [90.4, 7.25, -2.42]], { r: 0.1, flange: 2.4, flangeMat: mats.iron });
+    pipeRun(batch, mats.bronze, [[96.7, 7.25, -2.42], [96.7, 3.95, -2.42]], { r: 0.07, flangeMat: mats.iron });
+    pipeRun(batch, mats.bronze, [[97.6, 2.3, -2.45], [99.75, 2.3, -2.45], [99.8, 2.3, -2.25]], { r: 0.065, flangeMat: mats.iron });
+    valveWheel(batch, mats, 96.7, 5.4, -2.3, 0.22);
+    valveWheel(batch, mats, 101.75, 6.2, -2.3, 0.2);
+    runeGauge(scene, batch, mats, 97.95, 6.05, -2.5, { r: 0.16, color: [0.35, 1.9, 2.4] });
+    runeGauge(scene, batch, mats, 101.55, 3.25, -2.5, { r: 0.12 });
+    // estantes del maestro, panoplia y estandarte sobre el altillo
+    wallShelf(batch, mats, rnd, 90.6, 92.5, 3.55, -2.6);
+    wallShelf(batch, mats, rnd, 90.6, 92.5, 4.35, -2.6);
+    toolRack(batch, mats, rnd, 90.7, 92.4, 5.45, -2.6);
+    wallShelf(batch, mats, rnd, 87.4, 88.0, 4.6, -2.6, { depth: 0.26 });
+    banner(scene, mats, 93.7, 7.4, -2.5, 2.4, updaters);
+    crate(kit, mats, 97.8, y, 98.6, 0.75, -1.9);
+    barrel(batch, mats, 99.15, y, -1.6);
   }
 
   // =====================================================================================
@@ -457,8 +542,8 @@ export function buildLevel01(game, tex) {
     hangIvy(batch, mats, 124.4, 8, 0.8, 3.2, 1.4);
     foreground.push(fgColumn(scene, mats, 113.5, y, 3.4, 3.6));
     etherLamp(scene, mats, tex, 124.4, 5.4, -0.68, { color: 'amber' });
-    etherLamp(scene, mats, tex, 108.0, 3.4, -2.6, { color: 'teal' });
-    etherLamp(scene, mats, tex, 119.0, 3.4, -2.6, { color: 'teal' });
+    etherLamp(scene, mats, tex, 108.0, 3.4, -2.6, { color: 'teal', size: 1.3 });
+    etherLamp(scene, mats, tex, 119.0, 3.4, -2.6, { color: 'teal', size: 1.3 });
   }
 
   // Sombreado de sección: el frente cortado del terreno se funde hacia la oscuridad (lectura del plano).
@@ -476,6 +561,9 @@ export function buildLevel01(game, tex) {
   const pedestal = new ClavijaPedestal(game, { x: 95.6, y: 3.9, mats, tex });
   const gate = new SocketGate(game, { gateX0: 104.05, gateX1: 104.85, y0: 1.6, y1: 6.0, socketX: 102.6, socketY: 2.95, mats, tex });
   mechanisms.push(fountain1, fountain2, wall, fragment, pedestal, gate);
+  // sello rúnico que cierra el paso del atrio: primera lección de la saeta (tres bloques de 1 m,
+  // más altos que el salto; se deshacen en cascada al acertar a cualquiera)
+  for (let k = 0; k < 3; k++) mechanisms.push(new RuneBlock(game, { x0: 13.6, y0: 1.6 + k, size: 1, depth: 2.4, mats, seal: 'atrio' }));
 
   // Pistas contextuales (una vez, legibles sin sonido, §18.3)
   const hint = (x0, x1, id, text, keys, cond, y0, y1) => triggers.push(new Trigger({ x0, x1, y0, y1, cond, fire: (g) => g.hud.hint(id, text, keys) }));
@@ -499,10 +587,15 @@ export function buildLevel01(game, tex) {
     { x: 117.5, y: 1.6, x0: 107.0, x1: 124.0, facing: -1, name: 'terraza' },
   ];
 
+  // Vigías: tramo de vuelo acotado sobre la salida del paso bajo del canal
+  const sentinelSpawns = [
+    { x: 79.0, y: 5.3, x0: 76.2, x1: 85.4, name: 'canal' },
+  ];
+
   const groundAt = (x) => { const g = physics.groundBelow(x, 20, 60); return g ? g.y1 : -3; };
 
   return {
-    mats, updaters, foreground, lights, shafts, mechanisms, triggers, enemySpawns, groundAt,
+    mats, updaters, foreground, lights, shafts, mechanisms, triggers, enemySpawns, sentinelSpawns, groundAt,
     update(dt, t) { for (const u of updaters) u(dt, t); },
   };
 }

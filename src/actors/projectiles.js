@@ -63,11 +63,11 @@ export class Projectiles {
     this._c = new THREE.Color();
   }
 
-  fire({ x, y, dx, dy, kind = 'bolt', speed = 26, damage = 10, life = 0.8, owner = 'hero' }) {
+  fire({ x, y, dx, dy, kind = 'bolt', speed = 26, damage = 10, life = 0.8, owner = 'hero', source = null }) {
     const K = KINDS[kind];
     const vis = this.pool.find((p) => !p.used);
     if (vis) vis.used = true;
-    const p = { x, y, px: x, py: y, vx: dx * speed, vy: dy * speed, kind, K, damage, life, age: 0, owner, vis, hits: new Set(), alive: true, z: 0.25 };
+    const p = { x, y, px: x, py: y, vx: dx * speed, vy: dy * speed, kind, K, damage, life, age: 0, owner, source, vis, hits: new Set(), alive: true, z: 0.25 };
     this.list.push(p);
     this.flash(x, y, K.color, K.light * 0.9, 0.07);
     return p;
@@ -112,7 +112,7 @@ export class Projectiles {
       const r = p.K.radius;
       if (p.owner === 'hero') {
         // enemigos
-        for (const e of g.enemies) {
+        for (const e of g.hostiles) {
           if (!e.alive || p.hits.has(e)) continue;
           const box = expand(e.hurtbox(), r);
           if (!segAABB(p.px, p.py, p.x, p.y, box)) continue;
@@ -138,7 +138,12 @@ export class Projectiles {
         if (h.mode !== 'dead' && segAABB(p.px, p.py, p.x, p.y, expand(h.hurtbox(), r * 0.5))) {
           if (h.parryActive()) {
             // devolver el orbe con el golpe de éter
-            p.owner = 'hero'; p.vx = -p.vx * 1.4; p.vy = -p.vy * 1.4; p.damage *= 3; p.kind = 'counter'; p.K = KINDS.counter; p.age = 0; p.life = 1;
+            // vuelve hacia quien lo lanzó (si sigue en pie): desviar a tiempo siempre castiga
+            const sp = Math.hypot(p.vx, p.vy) * 1.6;
+            let dx = -p.vx, dy = -p.vy;
+            if (p.source && p.source.alive) { const hb = p.source.hurtbox(); dx = (hb.x0 + hb.x1) / 2 - p.x; dy = (hb.y0 + hb.y1) / 2 - p.y; }
+            const l = Math.hypot(dx, dy) || 1;
+            p.owner = 'hero'; p.vx = (dx / l) * sp; p.vy = (dy / l) * sp; p.damage *= 3; p.kind = 'counter'; p.K = KINDS.counter; p.age = 0; p.life = 1.4;
             g.events.emit('reflect', { x: p.x, y: p.y });
             continue;
           }

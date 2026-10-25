@@ -16,6 +16,101 @@ function glowSprite(color, size, tex) {
 }
 
 // ---------------------------------------------------------------------------
+// Sello rúnico: bloques de sillería sellados con un glifo de éter. Solo una saeta los disuelve
+// (el filo rebota); al romper uno, el resto del mismo sello se deshace en cascada. Es el lenguaje
+// de «bloque que se dispara» del género, contado con piedra y runas.
+let glyphTex = null;
+function runeGlyphTexture() {
+  if (glyphTex) return glyphTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const x = c.getContext('2d');
+  x.strokeStyle = '#fff'; x.lineCap = 'round'; x.lineJoin = 'round';
+  x.shadowColor = '#fff'; x.shadowBlur = 6;
+  x.lineWidth = 5;
+  x.beginPath(); x.arc(64, 64, 46, 0, Math.PI * 2); x.stroke();
+  x.lineWidth = 7;
+  x.beginPath();
+  x.moveTo(64, 28); x.lineTo(64, 100);
+  x.moveTo(40, 46); x.lineTo(64, 64); x.lineTo(88, 46);
+  x.moveTo(44, 88); x.lineTo(64, 76); x.lineTo(84, 88);
+  x.stroke();
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    x.beginPath(); x.moveTo(64 + Math.cos(a) * 52, 64 + Math.sin(a) * 52); x.lineTo(64 + Math.cos(a) * 60, 64 + Math.sin(a) * 60); x.stroke();
+  }
+  glyphTex = new THREE.CanvasTexture(c);
+  glyphTex.colorSpace = THREE.SRGBColorSpace;
+  return glyphTex;
+}
+
+export class RuneBlock {
+  constructor(game, { x0, y0, size = 1, depth = 2.8, mats, seal = null, color = [0.35, 1.9, 2.4] }) {
+    this.game = game;
+    this.box = { x0, x1: x0 + size, y0, y1: y0 + size };
+    this.seal = seal;
+    this.broken = false;
+    this.delay = -1;      // cuenta atrás de la cascada (−1: sin programar)
+    this.dissolveT = -1;  // tiempo disolviéndose (−1: intacto)
+    this.flashT = 0;
+    this.solid = game.physics.addSolid({ ...this.box, surface: 'stone', grab: false, id: 'runeBlock' });
+    this.group = new THREE.Group();
+    const cube = new THREE.Mesh(new THREE.BoxGeometry(size - 0.03, size - 0.03, depth), mats.stone);
+    cube.castShadow = cube.receiveShadow = true;
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(size - 0.12, size - 0.12, 0.04), new THREE.MeshStandardMaterial({ color: '#2a2622', roughness: 0.6, metalness: 0.3 }));
+    frame.position.z = depth / 2 + 0.005;
+    this.color = new THREE.Color(...color);
+    this.glyphMat = new THREE.MeshBasicMaterial({ map: runeGlyphTexture(), color: this.color.clone().multiplyScalar(0.5), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+    const glyph = new THREE.Mesh(new THREE.PlaneGeometry(size * 0.72, size * 0.72), this.glyphMat);
+    glyph.position.z = depth / 2 + 0.03;
+    glyph.renderOrder = 3;
+    this.group.add(cube, frame, glyph);
+    this.group.position.set(x0 + size / 2, y0 + size / 2, 0);
+    this.phase = Math.random() * 6;
+    game.scene.add(this.group);
+  }
+  hurtbox() { return this.broken || this.dissolveT >= 0 ? null : this.box; }
+  hit(dmg, heavy, src) {
+    if (this.broken || this.dissolveT >= 0) return;
+    if (src !== 'bolt') {
+      // el filo no rompe el sello: chispa y aviso
+      this.flashT = 0.25;
+      this.game.events.emit('runeResist', { x: (this.box.x0 + this.box.x1) / 2, y: (this.box.y0 + this.box.y1) / 2 });
+      return;
+    }
+    this.dissolveT = 0;
+    if (this.seal) {
+      // cascada: los bloques del mismo sello se deshacen por orden de distancia
+      const cy = this.box.y0;
+      for (const m of this.game.level.mechanisms) {
+        if (m instanceof RuneBlock && m !== this && m.seal === this.seal && !m.broken && m.dissolveT < 0 && m.delay < 0) m.delay = 0.06 + Math.abs(m.box.y0 - cy) * 0.11;
+      }
+    }
+  }
+  break() {
+    this.broken = true;
+    this.solid.enabled = false;
+    this.group.visible = false;
+    this.game.events.emit('runeBreak', { x: (this.box.x0 + this.box.x1) / 2, y: (this.box.y0 + this.box.y1) / 2, box: this.box, color: this.color });
+  }
+  update(dt) {
+    if (this.broken) return;
+    if (this.delay >= 0) { this.delay -= dt; if (this.delay <= 0) { this.delay = -1; this.dissolveT = 0; } }
+    if (this.dissolveT >= 0) {
+      this.dissolveT += dt;
+      this.glyphMat.color.copy(this.color).multiplyScalar(0.5 + this.dissolveT * 14);
+      this.group.position.x = (this.box.x0 + this.box.x1) / 2 + (Math.random() - 0.5) * 0.04;
+      if (this.dissolveT > 0.08) this.break();
+      return;
+    }
+    this.flashT = Math.max(0, this.flashT - dt);
+    const t = this.game.simTime || 0;
+    const k = 0.42 + 0.12 * Math.sin(t * 2.2 + this.phase) + this.flashT * 3;
+    this.glyphMat.color.copy(this.color).multiplyScalar(k);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Pedestal con la clavija de forja (herramienta del capítulo, §16.2).
 export class ClavijaPedestal {
   constructor(game, { x, y, mats, tex }) {

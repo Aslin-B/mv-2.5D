@@ -33,11 +33,14 @@ export function buildSections(solids, { bevelMat, z = SECTION_Z, bottom = -40 } 
   const list = solids.filter((s) => s.section !== false);
   const fill = [];
   const bevel = [];
+  const top = (s) => s.sectionTop ?? s.y1;
   for (const s of list) {
     const y0 = s.y0 <= -5.9 ? bottom : s.y0; // los suelos se prolongan hasta el fondo del encuadre
-    fill.push(quad(s.x0, y0, s.x1, s.y1, z));
+    fill.push(quad(s.x0, y0, s.x1, top(s), z));
+    // sectionTop: la masa negra se corta por debajo para dejar ver el modelado iluminado de encima
+    if (s.sectionTop !== undefined) continue;
     // bisel en el borde superior donde no lo tapa otra masa
-    const covers = list.filter((o) => o !== s && o.y0 <= s.y1 + 1e-3 && o.y1 > s.y1 + 1e-3).map((o) => [o.x0, o.x1]);
+    const covers = list.filter((o) => o !== s && o.y0 <= s.y1 + 1e-3 && top(o) > s.y1 + 1e-3).map((o) => [o.x0, o.x1]);
     for (const [a, b] of uncovered(s.x0, s.x1, covers)) {
       const g = new THREE.BufferGeometry();
       const t = s.kind === 'oneway' ? 0.035 : 0.055;

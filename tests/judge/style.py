@@ -9,7 +9,9 @@ métricas trabajan en CIE L*a*b* sobre la imagen escalada a 640 px de ancho.
 - black_pct: % de píxeles con L* < 6 (masas negras de primer plano y marcos de corte).
 - l_p5 / l_p50 / l_p95: percentiles de luminosidad.
 - chroma_mean / chroma_p95: croma C*ab media y percentil 95.
-- accent_pct: % de píxeles con C* > 45 y L* > 55 (acentos luminosos saturados: efectos, luces).
+- accent_pct: % de píxeles con saturación HSV > 0,55 y valor > 0,7 (acentos luminosos saturados:
+  efectos, luces). Se mide en HSV y no con C*ab porque el cian puro no supera C* 50 en sRGB: un
+  umbral de croma Lab no contaría nunca un acento cian y sí uno naranja del mismo brillo.
 - hue_unity: fracción de los píxeles cromáticos (C* > 8) cuyo tono cae a ±35° del tono dominante
   (unidad cromática de la sala).
 - detail: % de píxeles con gradiente de L* > 12 por píxel (riqueza de detalle).
@@ -63,6 +65,10 @@ def metrics(path):
         dom = k * 10 + 5
         d = np.abs(((hv - dom) + 180) % 360 - 180)
         unity = float((d <= 35).mean())
+    c01 = rgb / 255.0
+    vmax = c01.max(-1)
+    sat = np.where(vmax > 0, (vmax - c01.min(-1)) / np.maximum(vmax, 1e-6), 0)
+    accent = (sat > 0.55) & (vmax > 0.7)
     gy, gx = np.gradient(L)
     g = np.hypot(gx, gy)
     return {
@@ -73,7 +79,7 @@ def metrics(path):
         'contrast': round(float(Lm.std()), 1),
         'chroma_mean': round(float(Cm.mean()), 1),
         'chroma_p95': round(float(np.percentile(Cm, 95)), 1),
-        'accent_pct': round(float(((Cm > 45) & (Lm > 55)).mean() * 100), 2),
+        'accent_pct': round(float(accent[mask].mean() * 100), 2),
         'hue_unity': round(unity, 2),
         'hue_dom': dom,
         'detail': round(float((g[mask] > 12).mean() * 100), 1),

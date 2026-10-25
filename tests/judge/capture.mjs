@@ -92,11 +92,11 @@ if (want('05_telegrafia')) {
   await g.run({ parry: true }, 2); await g.run({}, 1);
   for (let i = 0; i < 30; i++) { const s = await g.state(); if (s.stats.parries > 0) break; await g.step(1); }
   await g.step(3);
-  await shot('06_parada', 'Parada precisa: chispas, destello y retroceso del rival');
-  // contraataque
+  await shot('06_parada', 'Desvío con el golpe de éter (L): chispas, destello y retroceso del rival');
+  // contraconjuro (J tras el desvío)
   await g.run({ attack: true }, 1); await g.input({});
-  for (let i = 0; i < 40; i++) { const h = await hero(); if (h.attack === 'riposte' && h.at >= 0.12) break; await g.step(1); }
-  await shot('07_contraataque', 'Contraataque a dos manos tras la parada: estela e impacto');
+  await g.step(4);
+  await shot('07_contraataque', 'Contraconjuro tras el desvío: saeta dorada pesada e impacto', { settle: false });
   await g.run({}, 60);
 }
 if (want('08_borde')) {
@@ -107,8 +107,8 @@ if (want('08_borde')) {
   await g.run({ right: true, up: true }, 50); await g.input({});
 }
 if (want('09_desliz')) {
-  await g.teleport(68.0, 1.6, 1); await g.run({ right: true, run: true }, 16); await g.run({ right: true, run: true, down: true }, 2);
-  await g.run({ right: true, run: true }, 18);
+  await g.teleport(68.0, 1.6, 1); await g.run({ right: true }, 16); await g.run({ right: true, down: true }, 2);
+  await g.run({ right: true }, 18);
   await shot('09_desliz', 'Deslizamiento bajo el muro derrumbado');
   await g.run({ right: true }, 60); await g.input({});
 }
@@ -140,6 +140,38 @@ if (want('14_terraza')) {
   await g.teleport(109.5, 1.6, 1); await g.run({ right: true }, 26); await g.run({}, 4);
   await shot('14_terraza', 'Terraza final: vista del valle y segundo saqueador');
 }
+if (want('15_sello')) {
+  await g.teleport(11.6, 1.6, 1); await g.run({}, 20);
+  await g.run({ attack: true }, 1); await g.run({}, 5);
+  await shot('15_sello', 'Sello rúnico del atrio: la saeta lo alcanza y se deshace en cascada', { settle: false });
+  await g.run({}, 60);
+}
+if (want('16_vigia')) {
+  await G(() => { const G = window.__game.game; for (const v of G.sentinels) v.reset(); G.hero.hp = G.hero.maxHp; });
+  await g.teleport(76.6, 1.6, 1);
+  for (let i = 0; i < 400; i++) {
+    await g.step(1);
+    const v = await G(() => { const v = window.__game.game.sentinels[0]; return { s: v.state, w: v.wind }; });
+    if (v.s === 'windup' && v.w > 0.45) break;
+  }
+  await shot('16_vigia', 'Vigía de bronce cargando un orbe (aviso magenta de 0,65 s)', { settle: false });
+}
+if (want('17_carga')) {
+  await g.teleport(26, 1.6, 1); await g.run({}, 20);
+  await g.run({ attack: true }, 64);
+  await shot('17_carga', 'Carga completa de la saeta: motas que convergen en el foco', { settle: false });
+  await g.run({}, 3);
+  await shot('18_cargada', 'Saeta cargada recién lanzada', { settle: false });
+  await g.run({}, 30);
+}
+if (want('19_apuntado')) {
+  await g.teleport(26, 1.6, 1); await g.run({}, 20);
+  await g.run({ aim: true, up: true, right: true }, 12);
+  await g.run({ aim: true, up: true, right: true, attack: true }, 1);
+  await g.run({ aim: true, up: true, right: true }, 3);
+  await shot('19_apuntado', 'Apuntado libre en diagonal con mira y disparo', { settle: false });
+  await g.input({});
+}
 
 // ---------------------------------------------------------------- tiras de animación
 if (want('A1_carrera')) {
@@ -147,14 +179,19 @@ if (want('A1_carrera')) {
   await strip('A1_carrera', 'Ciclo de carrera: contacto, paso, impulso (cada 4 pasos de 1/60 s)', 8, 4);
   await g.input({});
 }
-if (want('A2_combo')) {
+if (want('A2_disparo')) {
   await g.teleport(26, 1.6, 1); await g.run({}, 20);
-  await strip('A2_combo', 'Cadena de tres cortes (cada 5 pasos)', 10, 5, async (i) => { await g.input(i === 0 || i === 3 || i === 6 ? { attack: true } : {}); });
+  await strip('A2_disparo', 'Disparo en carrera: brazo de lanzamiento, retroceso y saeta (cada 3 pasos)', 10, 3, async (i) => { await g.input(i === 2 || i === 6 ? { attack: true, right: true } : { right: true }); });
   await g.input({});
 }
-if (want('A3_voltereta')) {
+if (want('A3_paso')) {
   await g.teleport(26, 1.6, 1); await g.run({}, 20);
-  await strip('A3_voltereta', 'Voltereta de esquiva (cada 3 pasos)', 8, 3, async (i) => { await g.input(i === 0 ? { dodge: true, right: true } : { right: false }); });
+  await strip('A3_paso', 'Paso etéreo (cada 2 pasos)', 8, 2, async (i) => { await g.input(i === 0 ? { dodge: true, right: true } : { right: false }); });
+  await g.input({});
+}
+if (want('A6_golpe')) {
+  await g.teleport(26, 1.6, 1); await g.run({}, 20);
+  await strip('A6_golpe', 'Golpe de éter con la hoja del foco (cada 3 pasos)', 8, 3, async (i) => { await g.input(i === 0 ? { parry: true } : {}); });
   await g.input({});
 }
 if (want('A4_subida')) {

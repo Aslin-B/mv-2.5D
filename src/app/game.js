@@ -8,6 +8,7 @@ import { Hero, TUNING } from '../actors/hero.js';
 import { Marauder } from '../actors/marauder.js';
 import { ATTACKS, SORCERER_CARRY } from '../animation/poses.js';
 import { Projectiles } from '../actors/projectiles.js';
+import { Sentinel } from '../actors/sentinel.js';
 import { RestFountain, CaudalFragment, ClavijaPedestal } from '../world/mechanisms.js';
 import { buildSorcerer, SORCERER_CLOTH, GLOW_COLOR } from '../render/sorcererModel.js';
 import { Animator } from '../animation/animator.js';
@@ -169,7 +170,10 @@ export class Game {
     front(model.root);
     for (const p of this.heroCape.panels) front(p.mesh);
     for (const e of this.enemies) { front(e.model.root); for (const p of e.cape.panels) front(p.mesh); }
-    this.stats.enemies = this.enemies.length;
+    // vigías voladores: comparten con los saqueadores la interfaz de daño (hurtbox/takeHit)
+    this.sentinels = (this.level.sentinelSpawns || []).map((s) => new Sentinel(this, s));
+    this.hostiles = [...this.enemies, ...this.sentinels];
+    this.stats.enemies = this.hostiles.length;
 
     // Efectos
     this.fx = {
@@ -335,7 +339,7 @@ export class Game {
     E.on('chargeFull', () => { A.play('chargeFull'); });
     E.on('counter', () => {
       this.slow(0.35, 0.35);
-      this.flash = 0.3; this.post.final.uniforms.flashColor.value.set('#ffe6a8');
+      this.flash = 0.16; this.post.final.uniforms.flashColor.value.set('#ffe6a8');
     });
     E.on('reflect', (d) => { A.play('parry', { pan: panX(d.x) }); this.hitstop = Math.max(this.hitstop, 0.06); this.burst(this.fx.arcane, d.x, d.y, 24, [2.4, 1.7, 0.6], 4, 0.4); });
     E.on('boltImpact', (d) => {
@@ -374,6 +378,15 @@ export class Game {
       this.glint(new THREE.Vector3(d.x, d.y, 0.3), 0.3, 1.05);
       this.hud.toast('¡Desvío! Lanza el contraconjuro (J)', 1.6);
     });
+    E.on('runeBreak', (d) => {
+      A.play('impact', { heavy: true, pan: panX(d.x) });
+      A.play('stone', { pan: panX(d.x) });
+      this.debris.burst(d.box.x0, d.box.y0, d.box.x1 - d.box.x0, d.box.y1 - d.box.y0, 8, (x) => this.groundBelow(x, d.box.y1));
+      this.burst(this.fx.arcane, d.x, d.y, 22, [d.color.r, d.color.g, d.color.b], 3.4, 0.45);
+      this.glint(new THREE.Vector3(d.x, d.y, 1.5), 0.2, 1.1);
+      this.cameraShake(0.14);
+    });
+    E.on('runeResist', (d) => { A.play('armor', { pan: panX(d.x) }); this.burst(this.fx.sparks, d.x, d.y, 8, [0.6, 1.6, 2.0], 2.5, 0.25); this.hud.toast('El sello solo cede al éter: dispara (J)', 1.8); });
     E.on('wallHit', (d) => { A.play('stone'); this.burst(this.fx.dust, d.x, d.y, 12, [0.7, 0.64, 0.55], 2); this.cameraShake(0.12); });
     E.on('wallBreak', (d) => {
       A.play('wallBreak');
@@ -509,6 +522,10 @@ export class Game {
       if (near || e.state === 'attack') e.update(DT);
       if (Math.abs(e.x - this.camera.x) < 20) e.animate(DT, 0.8);
     }
+    for (const s of this.sentinels) {
+      if (Math.abs(s.x - hero.x) < 22) s.update(DT);
+      if (Math.abs(s.x - this.camera.x) < 20) s.animate(DT);
+    }
 
     this.resolveCombat(sweep);
 
@@ -550,6 +567,7 @@ export class Game {
         hero.respawn(c.x, c.y, true);
         anim.reset(); this.heroCape.reset(); this.trail.clear();
         for (const e of this.enemies) if (e.alive) this.resetEnemy(e);
+        for (const s of this.sentinels) if (s.alive) s.reset();
         this.fadeTarget = 0;
         this.camera.snap({ x: hero.x, y: hero.y, facing: hero.facing }, sampleCameraZone(CAMERA_ZONES, hero.x));
         this.hud.toast('Vuelves a la fuente de descanso', 2.4);
@@ -624,7 +642,7 @@ export class Game {
     if (hero.activeWindow()) {
       const atk = ATTACKS[hero.attack.id];
       const heavy = !!atk.heavy || hero.attack.id === 'riposte';
-      for (const e of this.enemies) {
+      for (const e of this.hostiles) {
         if (!e.alive || hero.attack.hits.has(e)) continue;
         const box = expand(e.hurtbox(), 0.06);
         if (!sweepHits(sweep.prev, sweep.cur, box)) continue;
@@ -757,6 +775,7 @@ export class Game {
     this.heroAnim.update(DT, this.hero.animState());
     this.heroCape.step(DT, 1.2);
     for (const e of this.enemies) if (Math.abs(e.x - this.camera.x) < 20) e.animate(DT, 0.8);
+    for (const s of this.sentinels) s.animate(DT);
     for (const m of this.level.mechanisms) m.update(DT);
     this.ambientParticles();
     for (const k in this.fx) this.fx[k].update(DT, 0.4);
@@ -885,7 +904,7 @@ export class Game {
   fallNear() { let v = 0; for (const m of this.mistSources) v = Math.max(v, 1 - Math.abs(m.x - this.camera.x) / 14); return clamp(v, 0, 1); }
   combatLevel() {
     let c = 0;
-    for (const e of this.enemies) if (e.alive && e.alerted && Math.abs(e.x - this.hero.x) < 12) c = 1;
+    for (const e of this.hostiles) if (e.alive && e.alerted && Math.abs(e.x - this.hero.x) < 12) c = 1;
     return c;
   }
 
@@ -942,18 +961,20 @@ export class Game {
         const sep = (m) => {
           // contraste local en el borde: para cada píxel del contorno interior, diferencia absoluta
           // de L* frente a la media de los píxeles de fondo de su vecindario 5×5
-          let area = 0, bodyS = 0, edgeS = 0, edgeN = 0, inS = 0, outS = 0;
+          let area = 0, bodyS = 0, edgeS = 0, edgeN = 0, inS = 0, outS = 0, yMin = H, yMax = -1;
           for (let y = 2; y < H - 2; y++) for (let x = 2; x < W - 2; x++) {
             const k = y * W + x;
             if (!m[k]) continue;
             area++; bodyS += L[k];
+            if (y < yMin) yMin = y;
+            if (y > yMax) yMax = y;
             let o = 0, on = 0;
             for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const q = k + dy * W + dx; if (!m[q]) { o += L[q]; on++; } }
             if (on) { const om = o / on; edgeS += Math.abs(L[k] - om); inS += L[k]; outS += om; edgeN++; }
           }
           if (!area) return null;
           const n = Math.max(1, edgeN);
-          return { area: area / (W * H), edgeIn: +(inS / n).toFixed(1), edgeOut: +(outS / n).toFixed(1), edgeDelta: +(edgeS / n).toFixed(1), body: +(bodyS / area).toFixed(1) };
+          return { area: area / (W * H), heightPct: +(((yMax - yMin + 1) / H) * 100).toFixed(1), edgeIn: +(inS / n).toFixed(1), edgeOut: +(outS / n).toFixed(1), edgeDelta: +(edgeS / n).toFixed(1), body: +(bodyS / area).toFixed(1) };
         };
         const heroObjs = [g.heroModel.root, ...g.heroCape.panels.map((p) => p.mesh)];
         const hero = sep(mask(heroObjs));
@@ -998,15 +1019,20 @@ export class Game {
         for (let i = 0; i < 20; i++) g.step();
         g.camera.snap({ x: h.x, y: h.y, facing }, sampleCameraZone(CAMERA_ZONES, h.x));
         g.applyZone(h.x, true);
+        // un salto de prueba no es una llegada: sin cartel de sala inicial en las capturas
+        g.hud.areaT = 0; g.hud.areaEl.classList.remove('on');
       },
       state() {
         const h = g.hero;
         return {
           x: h.x, y: h.y, vx: h.vx, vy: h.vy, mode: h.mode, grounded: h.grounded, hp: h.hp, maxHp: h.maxHp, hasClavija: h.hasClavija,
           attack: h.attack && h.attack.id, enemies: g.enemies.map((e) => ({ x: e.x, y: e.y, hp: e.hp, state: e.state })),
-          gate: g.level.mechanisms.find((m) => m.gate)?.state, wallBroken: g.level.mechanisms.find((m) => m.box && m.hurtbox)?.broken,
+          sentinels: g.sentinels.map((e) => ({ x: e.x, y: e.y, hp: e.hp, state: e.state })),
+          seals: g.level.mechanisms.filter((m) => m.seal).map((m) => ({ seal: m.seal, x: m.box.x0, y: m.box.y0, broken: m.broken })),
+          gate: g.level.mechanisms.find((m) => m.gate)?.state, wallBroken: g.level.mechanisms.find((m) => m.cracks)?.broken,
           stats: { ...g.stats, parries: h.stats.parries, hits: h.stats.hits, shots: h.shots }, simTime: g.simTime, state: g.state,
           charge: h.charge, aim: { ...h.aim }, bolts: g.projectiles.list.length,
+          orbs: g.projectiles.list.filter((p) => p.alive && p.owner === 'enemy').map((p) => ({ x: p.x, y: p.y, vx: p.vx, vy: p.vy })),
         };
       },
       info() { const i = g.renderer.info; return { calls: i.render.calls, triangles: i.render.triangles, buildMs: g.buildMs, heroTris: g.heroModel.triangles, heroTrisHi: g.heroModel.trianglesHi, heroBreakdown: g.heroModel.breakdown, marauderTris: g.marauderTris }; },

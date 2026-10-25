@@ -21,6 +21,8 @@ for (const [k, v] of shots) {
 }
 lines.push('');
 lines.push(`- Mediana de separación del héroe (Δ L* en el borde de la silueta): **${med(heroD).toFixed(1)}**; capturas con Δ ≥ 12: **${heroD.filter((d) => d >= 12).length}/${heroD.length}**.`);
+const heights = shots.map(([, v]) => v.hero && v.hero.heightPct).filter(Boolean);
+if (heights.length) lines.push(`- Altura de Aren en pantalla (mediana): **${med(heights).toFixed(1)} %** del alto del cuadro (objetivo v2: 14–20 %).`);
 lines.push(`- Mediana de separación de enemigos: **${enemyD.length ? med(enemyD).toFixed(1) : '—'}** (${enemyD.length} mediciones).`);
 if (mcalls.length) lines.push(`- Pase principal de la escena: ${Math.min(...mcalls)}–${Math.max(...mcalls)} llamadas de dibujo, ${(Math.min(...mtris) / 1000).toFixed(0)}k–${(Math.max(...mtris) / 1000).toFixed(0)}k triángulos (presupuesto de la biblia: 80–160 llamadas, 150k–400k triángulos).`);
 lines.push(`- Con el pase de sombras: ${Math.min(...calls)}–${Math.max(...calls)} llamadas; ${(Math.min(...tris) / 1000).toFixed(0)}k–${(Math.max(...tris) / 1000).toFixed(0)}k triángulos.`);

@@ -11,6 +11,13 @@ La inspiración en otros juegos se limita a principios generales del género (le
 mapa interconectado, habilidades que abren rutas, telegrafía de ataques). No se reproduce ningún
 personaje, nivel, interfaz, sonido, nombre ni recurso de otra obra.
 
+Para la iteración 4 la usuaria aportó seis capturas de Metroid Dread (Nintendo / MercurySteam) como
+referencia de estilo. Esas imágenes **no** forman parte del repositorio ni del juego: el juez solo
+guarda cifras derivadas de ellas (`tests/judge/referencia.json`: medianas y rangos de luminosidad,
+croma, detalle y acentos). El hechicero, el vigía, el sello rúnico y la interfaz son diseños propios;
+de la referencia se toman principios generales (masas negras en primer plano, acentos luminosos
+saturados, disparo con apuntado y carga, desvío cuerpo a cuerpo), no recursos ni formas concretas.
+
 ## Software de terceros incluido en la compilación
 
 - **three.js** 0.186.1 — Licencia MIT. Copyright © 2010-2026 three.js authors.

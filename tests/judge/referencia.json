@@ -1,0 +1,95 @@
+{
+ "descripcion": "Métricas de estilo de las 6 capturas de referencia que aportó la usuaria (Metroid Dread). Las imágenes no se guardan en el repositorio por derechos de autor: solo estas cifras derivadas, calculadas con tests/judge/style.py (640 px de ancho, zonas de interfaz excluidas).",
+ "n_imagenes": 6,
+ "mediana": {
+  "black_pct": 23.8,
+  "l_p5": 0.0,
+  "l_p50": 17.85,
+  "l_p95": 68.05,
+  "contrast": 19.65,
+  "chroma_mean": 7.05,
+  "chroma_p95": 19.3,
+  "accent_pct": 0.15,
+  "hue_unity": 0.64,
+  "detail": 6.25
+ },
+ "rango": {
+  "black_pct": [
+   2.6,
+   36.5
+  ],
+  "l_p5": [
+   0.0,
+   12.5
+  ],
+  "l_p50": [
+   10.8,
+   28.2
+  ],
+  "l_p95": [
+   39.0,
+   81.5
+  ],
+  "contrast": [
+   13.9,
+   24.4
+  ],
+  "chroma_mean": [
+   3.8,
+   15.6
+  ],
+  "chroma_p95": [
+   12.6,
+   29.0
+  ],
+  "accent_pct": [
+   0.0,
+   1.79
+  ],
+  "hue_unity": [
+   0.26,
+   1.0
+  ],
+  "detail": [
+   3.5,
+   11.9
+  ]
+ },
+ "objetivo": {
+  "black_pct": [
+   15,
+   35
+  ],
+  "l_p50": [
+   12,
+   24
+  ],
+  "l_p95": [
+   55,
+   80
+  ],
+  "contrast": [
+   15,
+   25
+  ],
+  "accent_pct": [
+   0.1,
+   2.0
+  ],
+  "hue_unity": [
+   0.5,
+   0.85
+  ],
+  "detail": [
+   5,
+   12
+  ]
+ },
+ "objetivo_personaje": {
+  "altura_en_cuadro_pct": [
+   14,
+   20
+  ],
+  "delta_borde_min": 12
+ }
+}

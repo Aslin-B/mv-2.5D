@@ -16,7 +16,7 @@ import { smoothstep, clamp } from '../core/math.js';
 
 const C = {
   suit: lin('#1f2738'), suitDark: lin('#121722'), boot: lin('#1a1c22'),
-  ivory: lin('#c2b8a2'), ivoryShade: lin('#978c74'), seam: lin('#3e382e'),
+  ivory: lin('#bcb098'), ivoryShade: lin('#978c74'), seam: lin('#3e382e'),
   gold: lin('#d0a548'), goldDark: lin('#8c6a2a'),
   crimson: lin('#8a1828'), crimsonDark: lin('#55101b'),
   glow: [0.22, 1.55, 1.95],   // emisión lineal (>1: alimenta el bloom)
@@ -24,7 +24,7 @@ const C = {
 };
 export const GLOW_COLOR = new THREE.Color(0.35, 2.3, 2.8);
 
-const plate = (shade = 0, w = 0.25) => ({ c: mixc(C.ivory, C.ivoryShade, shade), r: 0.36 + shade * 0.2, m: 0, p: PATTERN.enamel, w });
+const plate = (shade = 0, w = 0.25) => ({ c: mixc(C.ivory, C.ivoryShade, shade), r: 0.47 + shade * 0.2, m: 0, p: PATTERN.enamel, w });
 const seam = () => ({ c: C.seam, r: 0.7, m: 0, p: PATTERN.plain, w: 0.5 });
 const gold = (k = 0) => ({ c: mixc(C.gold, C.goldDark, k), r: 0.28, m: 1, p: PATTERN.metal, w: 0.35 });
 const glow = (k = 1) => ({ c: k >= 1 ? C.glow : C.glowSoft, r: 0.2, m: 0, p: PATTERN.glow, w: 0 });
@@ -70,7 +70,7 @@ export function buildSorcerer() {
   let trisHi = 0;
   const piece = (bone, scene, paint, cell = 0.0055, key = bone) => {
     const hi = surfaceNets(scene, cell * 1.1);
-    const lo = surfaceNets(scene, Math.max(cell * 2.1, 0.009));
+    const lo = surfaceNets(scene, Math.max(cell * 2.5, 0.0095));
     const mh = addMesh(bone, meshToGeometry(hi, scene, paint, { origin: pos[bone] }));
     const ml = addMesh(bone, meshToGeometry(lo, scene, paint, { origin: pos[bone] }));
     tris -= hi.indices.length / 3;

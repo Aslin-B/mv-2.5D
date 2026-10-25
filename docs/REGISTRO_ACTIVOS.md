@@ -7,6 +7,13 @@ propia. Estado: aprobado para el prototipo. No hay archivos binarios de terceros
 | Identificador | Tipo | Fuente en el código | Notas |
 |---|---|---|---|
 | Aren Valdara (malla, esqueleto, materiales) | Personaje | `src/render/heroModel.js`, `humanoid.js`, `sdf.js`, `charMaterial.js` | Superficies implícitas poligonizadas; ~55k triángulos en juego, ~85k en planos cortos (cabeza, pelo y manos con dos niveles de detalle) |
+| Aren hechicero (armadura de esmalte, máscara, capucha, focos de éter) | Personaje | `src/render/sorcererModel.js`, `sdf.js`, `charMaterial.js` | Sustituye al guerrero desde la iteración 4; ~126k triángulos en juego y ~368k en planos cortos (dos niveles de detalle por pieza) |
+| Vigía de bronce | Personaje | `src/actors/sentinel.js` | Geometría primitiva de three.js (torno, anillos, aletas); ojo y halo emisivos |
+| Saetas, saeta cargada, contraconjuro y orbes | Efectos | `src/actors/projectiles.js` | Textura de cápsula generada en lienzo, luces puntuales en reserva fija |
+| Sello rúnico (bloques con glifo) | Mecanismo | `src/world/mechanisms.js` | Glifo dibujado en lienzo; diseño propio |
+| Maquinaria arcana (tuberías, válvulas, depósitos de éter, manómetros, estantes, herramientas) | Geometría | `src/world/machinery.js` | Primitivas paramétricas |
+| Secciones negras del plano de juego | Geometría | `src/render/sections.js` | Generadas a partir de las colisiones |
+| Minimapa e interfaz de estado | Interfaz | `src/ui/hud.js`, `style.css` | Dibujado en lienzo a partir de las colisiones; sigilo SVG propio |
 | Saqueador del acueducto y su lanza | Personaje | `src/render/marauderModel.js` | ~45k triángulos; clonado por instancia |
 | Capa de tela | Simulación | `src/render/cloth.js` | Verlet con textura procedural (borde deshilachado en enemigos) |
 | Animaciones | Animación procedural | `src/animation/*.js` | Poses clave, IK de pies y manos, sin captura de movimiento |

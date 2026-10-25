@@ -12,8 +12,8 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 // tasa de simulación (§11.6).
 
 export const QUALITY = {
-  alto: { pixelRatio: 1.0, msaa: 4, shadowSize: 4096, ao: true, bloom: true, label: 'Alto' },
-  medio: { pixelRatio: 1.0, msaa: 4, shadowSize: 2048, ao: false, bloom: true, label: 'Medio' },
+  alto: { pixelRatio: 1.0, msaa: 4, shadowSize: 4096, ao: true, bloom: true, sharpen: 0.4, label: 'Alto' },
+  medio: { pixelRatio: 1.0, msaa: 4, shadowSize: 2048, ao: false, bloom: true, sharpen: 0.35, label: 'Medio' },
   bajo: { pixelRatio: 0.75, msaa: 0, shadowSize: 1024, ao: false, bloom: false, label: 'Bajo' },
 };
 
@@ -35,15 +35,24 @@ const FinalShader = {
     highTint: { value: new THREE.Vector3(1, 1, 1) },
     contrast: { value: 0 },
     blackPoint: { value: 0 },
+    sharpen: { value: 0 },
+    texel: { value: new THREE.Vector2(1 / 1280, 1 / 720) },
   },
   vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
   fragmentShader: /* glsl */ `
-    uniform sampler2D tDiffuse; uniform float vignette, letterbox, flash, fade, grain, time, aspect, sat, contrast, blackPoint;
+    uniform sampler2D tDiffuse; uniform float vignette, letterbox, flash, fade, grain, time, aspect, sat, contrast, blackPoint, sharpen;
     uniform vec3 flashColor, lift, shadowTint, highTint;
+    uniform vec2 texel;
     varying vec2 vUv;
     float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233)) + time * 61.0) * 43758.5453); }
     void main(){
       vec3 c = texture2D(tDiffuse, vUv).rgb;
+      // enfoque suave (máscara de desenfoque en cruz): recupera la nitidez del detalle de media escala
+      if (sharpen > 0.0) {
+        vec3 n4 = texture2D(tDiffuse, vUv + vec2(texel.x, 0.0)).rgb + texture2D(tDiffuse, vUv - vec2(texel.x, 0.0)).rgb
+                + texture2D(tDiffuse, vUv + vec2(0.0, texel.y)).rgb + texture2D(tDiffuse, vUv - vec2(0.0, texel.y)).rgb;
+        c = max(c + (c - n4 * 0.25) * sharpen, 0.0);
+      }
       // gradación suave: sombras ligeramente frías, saturación contenida
       float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
       c = mix(vec3(l), c, sat);
@@ -112,6 +121,8 @@ export class PostFX {
     }
     composer.addPass(new OutputPass());
     this.final = new ShaderPass(FinalShader);
+    this.final.uniforms.sharpen.value = q.sharpen ?? 0;
+    this.final.uniforms.texel.value.set(1 / (size.x * pr), 1 / (size.y * pr));
     composer.addPass(this.final);
     this.composer = composer;
   }
@@ -119,6 +130,8 @@ export class PostFX {
   setSize(w, h) {
     this.composer.setSize(w, h);
     this.final.uniforms.aspect.value = w / h;
+    const pr = this.renderer.getPixelRatio();
+    this.final.uniforms.texel.value.set(1 / (w * pr), 1 / (h * pr));
   }
 
   render(dt, p) {

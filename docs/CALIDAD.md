@@ -1,5 +1,76 @@
 # Juez de calidad del primer nivel
 
+> **Versión 2 (desde la iteración 4): estándar alto anclado a referencias.** La usuaria pidió acercar
+> el juego al estilo gráfico de un conjunto de capturas de Metroid Dread, convertir a Aren en un
+> hechicero con poderes a distancia y fijar patrones de calidad altos. El juez v2 conserva la rúbrica
+> y las evidencias de la v1 (más abajo) y añade tres cosas: métricas de estilo comparadas con las
+> referencias, estándares del personaje y de la jugabilidad, y un ciclo sin límite fijo de
+> iteraciones. Las imágenes de referencia **no** se guardan en el repositorio; solo sus cifras
+> derivadas en [`tests/judge/referencia.json`](../tests/judge/referencia.json).
+
+## v2 · Métricas de estilo frente a las referencias
+
+`python3 tests/judge/style.py <carpeta>` mide cada captura (640 px de ancho, sin las esquinas de la
+interfaz) en CIE L\*a\*b\*:
+
+| Métrica | Qué mide | Mediana de las referencias | Rango de las referencias | Objetivo |
+|---|---|---|---|---|
+| `black_pct` | % de negro (L\* < 6): masas de primer plano y sección del terreno | 23,8 | 2,6–36,5 | 15–35 |
+| `l_p50` | luminosidad mediana | 17,9 | 10,8–28,2 | 12–24 |
+| `l_p95` | altas luces | 68,1 | 39–81,5 | 55–80 |
+| `contrast` | desviación típica de L\* | 19,7 | 13,9–24,4 | 15–25 |
+| `accent_pct` | % de acentos luminosos saturados (HSV: saturación > 0,55 y valor > 0,7) | 0,15 | 0–1,79 | 0,1–2 |
+| `hue_unity` | fracción de píxeles con color a ±35° del tono dominante | 0,64 | 0,26–1 | 0,5–0,85 |
+| `detail` | % de píxeles con gradiente de L\* > 12 (riqueza de detalle) | 6,25 | 3,5–11,9 | ≥ 5 |
+
+El acento se mide en HSV y no con el croma Lab porque un cian puro no supera C\* 50 en sRGB: con un
+umbral de croma Lab los acentos cian (el color de Aren) nunca contarían y los naranjas sí.
+
+Las cinco salas se capturan con `tests/judge/preview.mjs` en el centro de cada una (perfil alto,
+1280×720) y se compara la **mediana de las cinco** con el objetivo.
+
+## v2 · Estándares del personaje
+
+- Altura de Aren en pantalla entre el 14 y el 20 % del alto del cuadro en juego (lectura a
+  distancia, como en las referencias).
+- Separación del contorno (Δ L\* del borde frente al fondo, ver la v1) ≥ 12 en todas las capturas
+  de juego.
+- Tono propio frente a la sala: el carmesí de la capucha y el marfil de la armadura no se confunden
+  con el tono dominante de ningún escenario; los acentos de Aren son cian y los hostiles, magenta o
+  rojizos.
+- Silueta reconocible en negro: capucha, hombreras, manto y focos se distinguen sin color.
+
+## v2 · Estándares de jugabilidad (principios del género, sin copiar recursos)
+
+- Ataque principal a distancia con apuntado en 8 direcciones y una versión cargada.
+- Esquiva con invulnerabilidad breve, en suelo y en el aire.
+- Defensa activa con recompensa: el desvío cuerpo a cuerpo abre un contraataque fuerte.
+- Barreras que se abren con una habilidad concreta (el sello rúnico solo cede a las saetas).
+- Enemigos con aviso legible ≥ 0,5 s antes de cada ataque y al menos uno que ataque a distancia.
+- Minimapa con la sala actual y la posición de Aren; vida y energía siempre visibles.
+- Todo verificado por pruebas funcionales deterministas.
+
+## v2 · Anclas y topes adicionales
+
+Las anclas no cambian (10 = el acabado de las referencias). Topes nuevos:
+
+- Mediana de las salas fuera del **rango** de las referencias en una métrica de luz (`black_pct`,
+  `l_p50`, `l_p95`, `contrast`) → Gráficos ≤ 6.
+- Más de dos métricas de estilo fuera del **objetivo** → Gráficos ≤ 6,5.
+- Héroe por debajo del 12 % del alto del cuadro → Estética y legibilidad ≤ 6.
+- Falta alguno de los estándares de jugabilidad → Control ≤ 6,5.
+
+## v2 · Ciclo
+
+Sin límite fijo de iteraciones: se itera mientras alguna métrica quede fuera del objetivo o la nota
+ponderada suba al menos 0,2 por iteración. Cuando una carencia ya no se puede cerrar con la ruta
+técnica actual (por ejemplo, arte modelado a mano o animación capturada), el informe lo dice y se
+detiene esa línea.
+
+---
+
+# Versión 1 (iteraciones 0–3)
+
 Este documento fija cómo se evalúa el nivel «Acueducto del Alba» antes de cada entrega. La
 evaluación combina **evidencias reales del motor** (capturas a 1280×720 en perfil alto, tiras de
 animación y un vídeo grabado cuadro a cuadro) con **métricas objetivas** calculadas sobre esas mismas

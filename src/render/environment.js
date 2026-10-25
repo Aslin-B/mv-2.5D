@@ -24,9 +24,10 @@ export function buildSky() {
         vec3 d = normalize(vDir);
         float y = d.y;
         vec3 zenith = vec3(0.045, 0.075, 0.16);
-        vec3 mid = vec3(0.32, 0.36, 0.52);
+        vec3 mid = vec3(0.24, 0.29, 0.5);
         vec3 horizon = vec3(1.25, 0.72, 0.42);
-        vec3 col = mix(horizon, mid, smoothstep(0.0, 0.25, y));
+        // la franja cálida se queda pegada al horizonte; encima, el cielo vira pronto a azul violáceo
+        vec3 col = mix(horizon, mid, smoothstep(0.0, 0.17, y));
         col = mix(col, zenith, smoothstep(0.2, 0.75, y));
         float sd = max(dot(d, sunDir), 0.0);
         // halo cálido alrededor del sol, más fuerte cerca del horizonte
