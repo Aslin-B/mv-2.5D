@@ -1,5 +1,67 @@
 # Juez de calidad del primer nivel
 
+> **Versión 3 (desde la iteración 7): juez estricto del personaje frente a la lámina «Mago de
+> Sombras».** La usuaria entregó una lámina pintada (rostro, cuerpo de 3/4, espalda y las cuatro
+> fases del poder) y pidió compararla una y otra vez hasta alcanzar su detalle y realismo. El juez v3
+> compone una **lámina del motor** con la misma composición y la mide recuadro a recuadro. La
+> lámina de referencia **no** se guarda en el repositorio: solo sus cifras, en
+> [`tests/judge/referencia_mago.json`](../tests/judge/referencia_mago.json). Las comparaciones lado a
+> lado se guardan fuera del repositorio.
+
+## v3 · Evidencias
+
+- `node tests/judge/sheet.mjs <carpeta> [--ref <lámina>]` captura en el estudio del personaje
+  (`studio.html`: mismo modelo, animador, tela, poder y posproceso que el juego) los siete encuadres
+  de la lámina, cada uno al tamaño de su recuadro (los pequeños con supermuestreo ×2), y los compone
+  en `lamina.png` (1536×1024) con `tests/judge/sheet.py`.
+- `python3 tests/judge/sheet.py <carpeta> --ref <lámina> --cmp <salida.jpg>` añade la comparación
+  lado a lado (fuera del repositorio).
+- Primeros planos de la cabeza sin pelo (frente, perfil y 3/4) en `head.html`, para juzgar la forma
+  sin que el cabello la tape.
+- En el juego: la secuencia de carga (semilla, condensación, eclipse, lanzamiento) con el harness de
+  pruebas, para comprobar que lo que mejora en el estudio se ve igual jugando.
+
+## v3 · Métricas por recuadro (CIE L\*a\*b\*)
+
+| Métrica | Qué mide |
+|---|---|
+| `detail` | % de píxeles con gradiente de L\* > 12: bordes y relieves legibles |
+| `fine` | media de \|laplaciano de L\*\|: textura fina (poros, hebras, cuero, bordados) |
+| `contrast` | desviación típica de L\* |
+| `violet_pct` | % de píxeles violetas (tono 255–320°, saturación > 0,25, valor > 0,2) |
+| `palette` | intersección de histogramas L\* y a\*b\* con el recuadro de la referencia (1 = misma paleta) |
+
+Las cifras orientan; no puntúan solas. El fondo pintado de la lámina (ruinas y bruma) suma detalle
+que el plató neutro del estudio no tiene, así que `detail` nunca se compara al pie de la letra.
+
+## v3 · Rúbrica del personaje (10 = la lámina)
+
+| Criterio | Peso | Qué se mira |
+|---|---|---|
+| Rostro y cabello | 25 % | forma de la cabeza y del rostro en frente, perfil y 3/4; ojos, párpados, barba; piel; melena |
+| Vestuario | 25 % | silueta del abrigo, capas (cuello, solapas, capucha, chaleco), materiales, botas y metal |
+| Manos y gestos | 15 % | manos legibles, guante sin dedos, gesto de sostener, ofrecer, contener y lanzar |
+| Poder | 15 % | núcleo negro, corona, humo, crecimiento por fases y lanzamiento con estela |
+| Poses y naturalidad | 20 % | equilibrio, contrapposto, zancada de carga, inclinación del torso, tela que responde |
+
+Anclas: **10** = la lámina; **7** = personaje de juego de acción actual en planos cortos; **5** =
+lectura correcta de todo el diseño con acabado claramente sintético; **3** = maniquí con el diseño
+reconocible; **1** = no se reconoce el diseño.
+
+Topes: rostro sin párpados, iris o barba → Rostro ≤ 3; abrigo que no llega a la caña o cerrado por
+delante → Vestuario ≤ 4; fases sin zancada (pies a menos de 0,5 m) → Poses ≤ 4; esfera más violeta
+que negra (`violet_pct` del eclipse > 4 veces el de la lámina) → Poder ≤ 6.
+
+## v3 · Límite declarado
+
+La lámina es una ilustración pintada. Con personajes generados por código (superficies implícitas,
+pintura por vértice, sin escaneos, texturas pintadas a mano ni render fuera de línea) el techo
+realista está por debajo de esa referencia, sobre todo en el rostro. Cada informe dice la distancia
+que queda en cada criterio y qué la cerraría.
+
+---
+
+
 > **Versión 2 (desde la iteración 4): estándar alto anclado a referencias.** La usuaria pidió acercar
 > el juego al estilo gráfico de un conjunto de capturas de Metroid Dread, convertir a Aren en un
 > hechicero con poderes a distancia y fijar patrones de calidad altos. El juez v2 conserva la rúbrica

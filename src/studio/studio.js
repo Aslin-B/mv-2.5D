@@ -46,10 +46,10 @@ const VIEWS = {
   hands: { yaw: 0.25, cast: 'R', target: 'palm', off: [0, 0.06, 0], dist: 0.8, fov: 26, chargeT: 1.6, hold: 'present' },
   hand0: { yaw: -0.4, cast: 'R', target: 'palmOff', off: [0, 0.0, 0], dist: 0.6, fov: 26 },
   handB: { yaw: 0.9, cast: 'R', target: 'palmOff', off: [0, 0.0, 0], dist: 0.45, fov: 26 },
-  seed: { yaw: 1.15, target: 'body', off: [0.25, -0.03, 0], dist: 4.3, fov: 30, chargeT: 0.45 },
-  condense: { yaw: 1.15, target: 'body', off: [0.25, -0.03, 0], dist: 4.3, fov: 30, chargeT: 1.8 },
-  eclipse: { yaw: 1.15, target: 'body', off: [0.25, -0.03, 0], dist: 4.3, fov: 30, chargeT: 3.3 },
-  launch: { yaw: 1.15, target: 'body', off: [0.45, -0.03, 0], dist: 4.3, fov: 30, chargeT: 3.3, launch: 0.16 },
+  seed: { yaw: 1.3, target: 'body', off: [0.2, -0.05, 0], dist: 4.3, fov: 30, chargeT: 0.45 },
+  condense: { yaw: 1.3, target: 'body', off: [0.2, -0.05, 0], dist: 4.3, fov: 30, chargeT: 1.8 },
+  eclipse: { yaw: 1.3, target: 'body', off: [0.2, -0.05, 0], dist: 4.3, fov: 30, chargeT: 3.3 },
+  launch: { yaw: 1.3, target: 'body', off: [0.4, -0.05, 0], dist: 4.3, fov: 30, chargeT: 3.3, launch: 0.16 },
 };
 
 function pose(v, steps = 150) {
@@ -63,7 +63,8 @@ function pose(v, steps = 150) {
   const s = state();
   s.facing = v.yaw >= 0 ? 1 : -1;
   // la carga avanza durante los últimos pasos: la tela y el cuerpo llegan asentados a la fase
-  const total = steps + Math.round((v.chargeT || 0) * 60);
+  // (y, salvo en el lanzamiento, unos pasos más con la carga sostenida: los pies terminan de asentarse)
+  const total = steps + Math.round((v.chargeT || 0) * 60) + (v.chargeT && !v.launch ? 30 : 0);
   for (let i = 0; i < total; i++) {
     const ct = (i - steps) * dt;
     if (v.chargeT && ct >= 0) {
@@ -81,7 +82,8 @@ function pose(v, steps = 150) {
     else { model.root.rotation.set(0, v.yaw, 0); model.root.updateMatrixWorld(true); }
     if (v.look) s.look = new THREE.Vector3(...v.look);
     if (v.headTurn) { model.bones.neck.rotation.y += v.headTurn * 0.4; model.bones.head.rotation.y += v.headTurn * 0.6; model.root.updateMatrixWorld(true); }
-    coatFront.step(dt, 0.4); coatBack.step(dt, 0.4);
+    const wind = 0.4 - s.facing * ORB_PHASES.auraAt(s.cast);
+    coatFront.step(dt, wind); coatBack.step(dt, wind);
     const F = anim.activeFocus;
     if (F && s.cast) orb.follow(anim, s, dt, F);
     else orb.hide();

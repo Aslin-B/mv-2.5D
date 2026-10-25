@@ -11,7 +11,7 @@ import { Projectiles } from '../actors/projectiles.js';
 import { Sentinel } from '../actors/sentinel.js';
 import { RestFountain, CaudalFragment, ClavijaPedestal } from '../world/mechanisms.js';
 import { buildShadowMage, MAGE_GLOW } from '../render/shadowMageModel.js';
-import { EclipseOrb } from '../render/eclipseOrb.js';
+import { EclipseOrb, ORB_PHASES } from '../render/eclipseOrb.js';
 import { Animator } from '../animation/animator.js';
 import { buildMarauder, cloneMarauder } from '../render/marauderModel.js';
 import { Cape } from '../render/cloth.js';
@@ -524,7 +524,7 @@ export class Game {
       }
     }
     const sweep = hero.bladeSweep(anim);
-    this.heroCape.step(DT, -hero.vx * 0.6 + 1.2);
+    this.heroCape.step(DT, -hero.vx * 0.6 + 1.2 - hero.facing * ORB_PHASES.auraAt(hero.cast));
     const swinging = hero.attack && ATTACKS[hero.attack.id].damage > 0 && hero.attack.t > ATTACKS[hero.attack.id].active[0] - 0.05 && hero.attack.t < ATTACKS[hero.attack.id].active[1] + 0.06;
     this.trail.push(anim.bladeBase, anim.bladeTip, swinging);
     this.heroModel.clavija.group.visible = hero.hasClavija;

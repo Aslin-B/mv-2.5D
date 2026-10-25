@@ -36,7 +36,7 @@ export function hairStrandGeometry(guides, origin = [0, 0, 0], { perGuide = 18, 
       const len = 0.82 + rnd() * 0.18;                 // hebras algo más cortas que la guía
       const fz = rnd() * 6.28, fa = 0.0006 + rnd() * 0.0016;
       // hebras sueltas más claras (reflejos castaños) entre otras más oscuras
-      const tone = (g.tone ?? 1) * (0.7 + rnd() * 0.45) * (rnd() < 0.12 ? 1.6 : 1);
+      const tone = Math.min(1.25, (g.tone ?? 1) * (0.65 + rnd() * 0.4) * (rnd() < 0.1 ? 1.35 : 1));
       const base = pos.length / 3;
       for (let i = 0; i <= seg; i++) {
         const u = (i / seg) * len;
@@ -90,7 +90,7 @@ export function hairStrandGeometry(guides, origin = [0, 0, 0], { perGuide = 18, 
 export function hairStrandMaterial(color = '#2a201a') {
   // brillo especular contenido y teñido: de lejos, miles de hebras de cara a la cámara no deben
   // sumar un velo gris
-  const m = new THREE.MeshPhysicalMaterial({ color, vertexColors: true, roughness: 0.4, metalness: 0, side: THREE.DoubleSide, envMapIntensity: 0.08, specularIntensity: 0.55, specularColor: new THREE.Color('#a88468') });
+  const m = new THREE.MeshPhysicalMaterial({ color, vertexColors: true, roughness: 0.46, metalness: 0, side: THREE.DoubleSide, envMapIntensity: 0.06, specularIntensity: 0.3, specularColor: new THREE.Color('#9c7458') });
   m.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>

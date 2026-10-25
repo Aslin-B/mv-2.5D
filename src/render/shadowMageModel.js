@@ -168,7 +168,8 @@ export function buildShadowMage({ hiDetail = true } = {}) {
     const m = prim.mat;
     const ax = Math.abs(x);
     if (m === 'neck') {
-      if (y > 1.5) return skinPaint(x, y, z, 0.15 + n * 0.2);
+      // camisa oscura de cuello alto: por delante sube hasta media garganta
+      if (y > (z > 0.0 ? 1.535 : 1.5)) return skinPaint(x, y, z, 0.15 + n * 0.2);
       return S_(mulc(C.shirt, 0.9 + n * 0.2), 0.8, 0, PATTERN.cloth, 0.4);
     }
     if (m === 'boot') return bootPaint(x, y, z, n);
@@ -288,7 +289,7 @@ export function buildShadowMage({ hiDetail = true } = {}) {
       const rho = Math.hypot(x / 1.1, z - zc);
       const inner = rho < Rr(y);
       const n = noise3(x, y, z, 50);
-      if (y > top(x, z) - 0.006) return silver(0.25 + n * 0.25);
+      if (y > top(x, z) - 0.005) return silver(0.55 + n * 0.25);
       if (inner) return lining(0.2 + n * 0.3);
       return leather(0.3 + n * 0.25, 0.05);
     };
@@ -324,15 +325,22 @@ export function buildShadowMage({ hiDetail = true } = {}) {
   // pegada al cuerpo, con un pliegue central y el borde de forro violeta.
   {
     const s = new SdfScene({ k: 0.014, subK: 0.008 });
-    const ring = [];
-    for (let i = 0; i <= 14; i++) {
-      const a = (-1 + i / 7) * 2.45;  // de la clavícula a la otra por detrás de la nuca
-      ring.push([Math.sin(a) * 0.13, 1.468 + 0.026 * Math.cos(a) - 0.02 * smoothstep(1.6, 2.45, Math.abs(a)), -0.035 - Math.cos(a) * 0.108]);
-    }
-    for (let i = 0; i < ring.length - 1; i++) {
-      const rr = (j) => 0.026 + 0.03 * Math.cos((j / 14 - 0.5) * Math.PI) ** 0.7;
-      s.add(roundCone(ring[i], ring[i + 1], rr(i), rr(i + 1), { mat: 'hood' }));
-    }
+    // rollo continuo de tela alrededor de la base del cuello: grueso en la nuca, se afina y baja
+    // hacia las clavículas (sin cerrarse delante, donde queda la garganta)
+    const zc = -0.035;
+    s.add({
+      mat: 'hood', min: [-0.21, 1.37, -0.22], max: [0.21, 1.56, 0.12],
+      d: (x, y, z) => {
+        const th = Math.atan2(x, zc - z), at = Math.abs(th);
+        const taper = smoothstep(2.3, 1.4, at);
+        const Rc = 0.13 - 0.016 * smoothstep(1.4, 2.3, at);
+        const Yc = 1.47 + 0.014 * Math.cos(th) - 0.05 * smoothstep(1.4, 2.3, at);
+        const a = 0.011 + 0.032 * taper, b = 0.016 + 0.034 * taper;
+        const rho = Math.hypot(x / 1.06, z - zc);
+        const e = (Math.hypot((rho - Rc) / a, (y - Yc) / b) - 1) * Math.min(a, b);
+        return Math.max(e, (at - 2.32) * rho);
+      },
+    });
     const zb = surfZb(0, 1.33);
     // la capucha vacía: un saco de tela que cae hasta media espalda, más ancho arriba
     s.add(ellipsoid([0, 1.375, zb - 0.03], [0.118, 0.11, 0.036], { mat: 'hood' }));
@@ -877,13 +885,13 @@ function buildHead(pos, rigidMat) {
   // ojos: la piel envuelve el globo (párpados) y una hendidura almendrada deja ver el ojo; el
   // ángulo externo queda algo más alto que el interno. El globo va hundido bajo el arco
   // superciliar: una regla del arco al pómulo apenas roza la córnea.
-  const eyeZ = 0.069, eyeR = 0.0117;
+  const eyeZ = 0.0675, eyeR = 0.0117;
   const slits = [];
   for (const s of [1, -1]) {
     head.add(ellipsoid([0.032 * s, 1.6925, eyeZ], [eyeR + 0.0012, eyeR + 0.0012, eyeR + 0.0013], { mat: 'lid', blend: 0.0032 }));
     const t = 0.085 * s;
     slits.push(head.carve(orientedEllipsoid([0.0325 * s, 1.6906, eyeZ + eyeR - 0.002],
-      [[Math.cos(t), Math.sin(t), 0], [-Math.sin(t), Math.cos(t), 0], [0, 0, 1]], [0.0152, 0.0043, 0.0092], { blend: 0.001 })));
+      [[Math.cos(t), Math.sin(t), 0], [-Math.sin(t), Math.cos(t), 0], [0, 0, 1]], [0.0152, 0.0039, 0.0092], { blend: 0.001 })));
   }
   // nariz: dorso estrecho y recto, punta definida, aletas, columela y fosas (abiertas hacia abajo)
   const zN0 = fz(0, 1.703) + 0.0018, zTip = fz(0, 1.66) + 0.019;
@@ -977,9 +985,17 @@ function buildHead(pos, rigidMat) {
     h += (0.0058 * G(ax, y, 0.021, 1.7128, 0.022, 0.0062) + 0.0034 * G(ax, y, 0.047, 1.7105, 0.013, 0.0058) + 0.002 * G(ax, y, 0, 1.7115, 0.008, 0.0068)) * wF;
     h -= 0.0032 * G(ax, y, 0.033, 1.7022, 0.0125, 0.0032) * wF;     // surco del párpado superior
     h -= 0.0008 * G(ax, y, 0.061, 1.724, 0.011, 0.015) * wS;        // sienes
-    h += 0.0017 * G(ax, y, 0.058, 1.668, 0.018, 0.0075) * wS;   // pómulo
+    h += 0.0026 * G(ax, y, 0.058, 1.668, 0.018, 0.0075) * wS;   // pómulo
     h += 0.0016 * G(ax, y, 0.064, 1.6815, 0.009, 0.0065) * wS;       // arco cigomático
-    h -= 0.002 * G(ax, y, 0.047, 1.643, 0.013, 0.016) * wS;          // mejilla hundida
+    h -= 0.0034 * G(ax, y, 0.049, 1.643, 0.013, 0.016) * wS;         // mejilla hundida
+    // surco nasogeniano: del ala de la nariz a fuera de la comisura, con el carrillo algo abultado
+    {
+      const ux = 0.0285 - 0.0175, uy = 1.618 - 1.656, ll = ux * ux + uy * uy;
+      const t = clamp(((ax - 0.0175) * ux + (y - 1.656) * uy) / ll, 0, 1);
+      const dd = Math.hypot(ax - 0.0175 - ux * t, y - 1.656 - uy * t);
+      const side = (ax - 0.0175 - ux * t) * -uy + (y - 1.656 - uy * t) * ux;   // > 0 hacia el carrillo
+      h += (-0.0011 * Math.exp(-((dd / 0.0022) ** 2)) + 0.0007 * Math.exp(-(((dd - 0.004) / 0.003) ** 2)) * (side > 0 ? 1 : 0)) * wF * Math.sin(Math.PI * Math.min(1, t * 1.15));
+    }
     h += 0.0011 * G(ax, y, 0.031, 1.646, 0.0065, 0.012) * wF;        // carrillo junto al surco nasogeniano
     h -= 0.0015 * G(ax, y, 0, 1.6135, 0.012, 0.0028) * wF;           // surco mentolabial
     h += 0.0019 * G(ax, y, 0, 1.6, 0.0135, 0.0095) * wF;             // mentón
@@ -1055,7 +1071,7 @@ function buildHead(pos, rigidMat) {
 
   // ---- Ojos ----
   // párpado superior rozando el borde del iris: mirada despierta y algo intensa
-  const LID_OPEN = -0.62;
+  const LID_OPEN = -0.53;
   const eyes = [];
   const eyeWhite = new THREE.MeshPhysicalMaterial({ color: '#86766c', roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.04 });
   // iris avellanado gris verdoso con fibras radiales, collarete ámbar y anillo límbico oscuro;
@@ -1121,7 +1137,7 @@ function buildHead(pos, rigidMat) {
     return k * (0.0003 * Math.sin(flow + w * 9) + (noise3(x, y, z, 45) - 0.5) * 0.003);
   };
   cap.relax = 1;
-  const hairPaint = (x, y, z) => ({ c: mulc(C.hair, 0.6 + noise3(x, y, z, 300) * 0.25), r: 0.75, m: 0, p: PATTERN.cloth, w: 0.4, aoK: 0.7 });
+  const hairPaint = (x, y, z) => ({ c: mulc(C.hair, 0.55 + noise3(x, y, z, 300) * 0.3), r: 0.62, m: 0, p: PATTERN.hair, w: 0.5, aoK: 0.7 });
   lodPair(cap, hairPaint, 0.0028, 0.0075, { dist: [0.006, 0.016], k: 0.7 });
 
   const HC = [0, 1.751, -0.021], HR = [0.0835, 0.104, 0.1];
@@ -1164,7 +1180,7 @@ function buildHead(pos, rigidMat) {
       const wave = Math.sin(t * Math.PI * per + ph) * wav * 0.028 * Math.min(1, t * 3);
       pts.push(vec.add(onScalp(dd, lift + Math.cos(t * Math.PI * per + ph) * 0.003 * (outer ? 1 : 0)), vec.scl(side, wave)));
     }
-    guides.push({ pts, w0: (outer ? 0.016 : 0.026) + rnd() * 0.012, w1: 0.008, nrm, tone: outer ? 0.75 + rnd() * 0.45 : 0.45 + rnd() * 0.25, tilt: outer ? 0.6 : 0.3 });
+    guides.push({ pts, w0: (outer ? 0.016 : 0.026) + rnd() * 0.012, w1: 0.008, nrm, tone: outer ? 0.75 + rnd() * 0.45 : 0.45 + rnd() * 0.25, tilt: outer ? 0.6 : 0.3, density: outer ? 1.3 : 2 });
   }
   // (b) melena suelta: de las sienes, detrás de las orejas y de la nuca; cae en ondas amplias hasta
   // el cuello y los hombros, con las puntas que se abren y se rizan hacia fuera
@@ -1235,7 +1251,7 @@ function buildHead(pos, rigidMat) {
   }
   const strands = strandTexture(128, 512, 11);
   const hairMat = hairMaterial(strands, '#33271f');
-  const strandMat = hairStrandMaterial('#33251c');
+  const strandMat = hairStrandMaterial('#3f2e23');
   // planos cortos: hebras finas generadas a partir de las guías; en juego, tarjetas de mechón
   for (const lod of HI ? ['hi', 'lo'] : ['lo']) {
     const g = lod === 'hi' ? hairStrandGeometry(guides, pos.head, { perGuide: 18, seg: 12 }) : hairCardGeometry(guides, pos.head, 6);

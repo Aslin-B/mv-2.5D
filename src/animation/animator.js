@@ -274,7 +274,10 @@ export class Animator {
       }
       if (this.launchW > 0) apply(MAGE_CAST.launch, this.launchW);
     }
-    this.stanceK = damp(this.stanceK, 1 + (wC * 1.1 + wE * 0.55) * this.castW * legsW + this.launchW * 0.9 * legsW + (present && ground ? 0.9 * this.castW : 0), 0.12, dt);
+    // base de la carga: zancada amplia desde la semilla (pie adelantado bajo la esfera, el de atrás
+    // estirado), más abierta al condensar y al lanzar
+    // (el lanzamiento mantiene la base de la fase alcanzada: los pies no se recolocan al soltar)
+    this.stanceK = damp(this.stanceK, 1 + (wS * 1.6 + wC * 0.8 + wE * 0.5) * Math.max(this.castW, this.launchW > 0 ? 1 : 0) * legsW + (present && ground ? 0.9 * this.castW : 0), 0.12, dt);
 
     // Brazales gemelos: el brazo del lado de la cámara lanza; al mirar a la izquierda se refleja la pose.
     if (this.twin) this.castSide = this.forceCast || (this.yaw >= 0 ? 'R' : 'L');
@@ -683,8 +686,8 @@ export class Animator {
     const fd = la.clone().addScaledVector(pn, -la.dot(pn));
     if (fd.lengthSq() < 1e-4) fd.set(0, 0, 1);
     fd.normalize();
-    const reach = lerp(0.3, 0.36, wC) + wE * 0.04;
-    const drop = lerp(0.22, 0.2, wC) + r * 0.35;
+    const reach = lerp(0.38, 0.44, wC) + wE * 0.03;
+    const drop = lerp(0.16, 0.12, wC) + r * 0.3;
     const hold = new THREE.Vector3().copy(sh).addScaledVector(la, reach);
     hold.y -= drop;
     // la mano se separa del cuerpo hacia el lado de cámara para que la esfera no lo atraviese

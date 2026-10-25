@@ -301,10 +301,10 @@ export const MAGE_CARRY = {
 // el torso; el eclipse afirma la base y sube los hombros; el lanzamiento lleva el peso adelante y gira
 // el torso hacia el blanco con el brazo extendido.
 export const MAGE_CAST = {
-  seed: makePose({ hip: [0, -0.025, 0], spine: [3, -6, 0], chest: [3, -8, 0], neck: [6, 4, 0], head: [10, 6, 0], clavR: [0, 0, 2] }),
-  condense: makePose({ hip: [0, -0.1, -0.01], hips: [4, 0, 0], spine: [6, -10, 0], chest: [3, -10, 0], neck: [4, 6, 0], head: [8, 6, 0], clavR: [0, 4, 4], clavL: [0, -2, -3], armL: [-18, 0, 6], foreL: [-30, 0, 0] }),
-  eclipse: makePose({ hip: [0, -0.15, -0.02], hips: [5, 0, 0], spine: [6, -14, 0], chest: [3, -12, -2], neck: [2, 6, 0], head: [6, 4, 0], clavR: [0, 6, 6], clavL: [0, -4, -6] }),
-  launch: makePose({ hip: [0, -0.1, 0.1], hips: [8, 10, 0], spine: [10, 16, 0], chest: [6, 18, -3], neck: [-6, -10, 0], head: [-6, -12, 0], clavR: [0, -8, 0], armL: [30, 0, 30], foreL: [-25, 0, 0] }),
+  seed: makePose({ hip: [0, -0.06, 0.03], hips: [6, 0, 0], spine: [6, -8, 0], chest: [4, -8, 0], neck: [2, 4, 0], head: [4, 6, 0], clavR: [0, 0, 2] }),
+  condense: makePose({ hip: [0, -0.1, 0.05], hips: [8, 0, 0], spine: [8, -12, 0], chest: [5, -12, 0], neck: [2, 6, 0], head: [4, 6, 0], clavR: [0, 4, 4], clavL: [0, -2, -3], armL: [-18, 0, 6], foreL: [-30, 0, 0] }),
+  eclipse: makePose({ hip: [0, -0.13, 0.06], hips: [9, 0, 0], spine: [9, -16, 0], chest: [5, -14, -2], neck: [0, 6, 0], head: [3, 4, 0], clavR: [0, 6, 6], clavL: [0, -4, -6] }),
+  launch: makePose({ hip: [0, -0.12, 0.12], hips: [10, 12, 0], spine: [12, 18, 0], chest: [8, 20, -3], neck: [-8, -12, 0], head: [-6, -14, 0], clavR: [0, -8, 0], armL: [30, 0, 30], foreL: [-25, 0, 0] }),
 };
 
 // Gestos de los dedos: flexión media (0 = estirados, 1 = puño), abanico (separación) y pulgar.

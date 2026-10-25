@@ -8,6 +8,8 @@ propia. Estado: aprobado para el prototipo. No hay archivos binarios de terceros
 |---|---|---|---|
 | Aren Valdara (malla, esqueleto, materiales) | Personaje | `src/render/heroModel.js`, `humanoid.js`, `sdf.js`, `charMaterial.js` | Superficies implícitas poligonizadas; ~55k triángulos en juego, ~85k en planos cortos (cabeza, pelo y manos con dos niveles de detalle) |
 | Aren hechicero (armadura de esmalte, máscara, capucha, focos de éter) | Personaje | `src/render/sorcererModel.js`, `sdf.js`, `charMaterial.js` | Sustituye al guerrero desde la iteración 4; ~126k triángulos en juego y ~368k en planos cortos (dos niveles de detalle por pieza) |
+| Aren, mago de sombras (rostro esculpido, abrigo, botas, metal grabado, cabello) | Personaje | `src/render/shadowMageModel.js`, `hairStrands.js`, `hairCards.js`, `cloth.js`, `charMaterial.js` | Diseño a partir de la lámina «Mago de Sombras» de la usuaria (la lámina no se versiona). Sustituye al hechicero acorazado; ~130k triángulos en juego y ~1M en planos cortos (cabello por hebras) |
+| Eclipse de sombras (núcleo, corona, humo, fases) | Efectos | `src/render/eclipseOrb.js`, `src/actors/projectiles.js` | Sombreadores propios; cuatro fases y viento sobre el abrigo |
 | Vigía de bronce | Personaje | `src/actors/sentinel.js` | Geometría primitiva de three.js (torno, anillos, aletas); ojo y halo emisivos |
 | Saetas, saeta cargada, contraconjuro y orbes | Efectos | `src/actors/projectiles.js` | Textura de cápsula generada en lienzo, luces puntuales en reserva fija |
 | Sello rúnico (bloques con glifo) | Mecanismo | `src/world/mechanisms.js` | Glifo dibujado en lienzo; diseño propio |

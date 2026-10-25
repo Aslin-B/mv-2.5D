@@ -18,6 +18,14 @@ export const ORB_PHASES = {
     if (t < 3.0) return lerp(R.condense, R.eclipse, ease((t - 1.5) / 1.5));
     return R.eclipse;
   },
+  // Viento del poder sobre el abrigo (m/s², hacia atrás, en contra de la mano que carga): crece con la
+  // carga y da un golpe al lanzar, como el vuelo de los faldones en la lámina.
+  auraAt(cast) {
+    if (!cast) return 0;
+    const p = this.powerAt(cast.t);
+    if (cast.launch == null) return 2.5 + p * 12;
+    return (4 + p * 16) * (1 - clamp(cast.launch / 0.6, 0, 1));
+  },
   // potencia visual 0..1 (corona, filamentos, luz)
   powerAt(t) { return clamp(t < 0.3 ? t / 0.3 * 0.25 : t < 1.5 ? 0.25 + (t - 0.3) / 1.2 * 0.35 : 0.6 + Math.min(1, (t - 1.5) / 1.5) * 0.4, 0, 1); },
 };
@@ -85,7 +93,7 @@ function coronaMaterial() {
         float halo = exp(-max(r - 1.0, 0.0) * 2.4) * smoothstep(0.92, 1.02, r);
         float rays = ofbm(vec3(a * 5.0, r * 1.5 - uTime * 0.8, uTime * 0.3));
         rays = smoothstep(0.45, 0.9, rays) * exp(-max(r - 1.0, 0.0) * 1.3) * smoothstep(0.95, 1.1, r);
-        vec3 col = uSilver * ring * 0.55 + uViolet * (halo * 0.32 + rays * 0.7);
+        vec3 col = uSilver * ring * 0.55 + uViolet * (halo * 0.16 + rays * 0.5);
         col *= k;
         gl_FragColor = vec4(col, 1.0);
       }`,
