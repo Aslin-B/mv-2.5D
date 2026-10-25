@@ -31,17 +31,17 @@ export function strandTexture(w = 128, h = 512, seed = 1) {
   ctx.globalCompositeOperation = 'source-over';
   // hebras agrupadas en mechones que se juntan hacia la punta: entre mechones queda hueco (la
   // tarjeta no se lee como una cinta maciza)
-  const clumps = 6;
+  const clumps = 9;
   for (let q = 0; q < clumps; q++) {
     const cu = 0.1 + 0.8 * ((q + 0.2 + rnd() * 0.6) / clumps);
     const cw = 0.05 + rnd() * 0.07;
     const clen = 0.7 + rnd() * 0.3;
     const cph = rnd() * 6.28;
-    const ns = 16 + Math.floor(rnd() * 14);
+    const ns = 18 + Math.floor(rnd() * 16);
     for (let i = 0; i < ns; i++) {
       const off = (rnd() - 0.5) * 2 * cw;
       const len = clen * (0.75 + rnd() * 0.25);
-      const width = 0.7 + rnd() * 1.4;
+      const width = 0.5 + rnd() * 1.0;
       const tone = 0.45 + rnd() * 0.65;
       const ph = rnd() * 6.28, amp = 0.4 + rnd() * 1.2;
       ctx.beginPath();
@@ -116,7 +116,9 @@ export function hairCardGeometry(guides, origin = [0, 0, 0], seg = 10) {
       const w = (g.w0 + (g.w1 - g.w0) * Math.pow(t, 0.8)) * 0.5;
       for (const k of [-1, 1]) {
         pos.push(P.x + S.x * w * k - origin[0], P.y + S.y * w * k - origin[1], P.z + S.z * w * k - origin[2]);
-        nor.push(N.x, N.y, N.z);
+        // normal de tubo: se curva hacia los bordes del mechón (sombreado redondo, no una cinta)
+        const ck = Math.cos(0.75), sk = Math.sin(0.75) * k;
+        nor.push(N.x * ck + S.x * sk, N.y * ck + S.y * sk, N.z * ck + S.z * sk);
         uv.push((k + 1) * 0.5 * (g.uw ?? 1) + (g.u0 ?? 0), 1 - t);
         // raíces más oscuras (oclusión dentro del volumen del pelo)
         const ao = 0.55 + 0.45 * Math.min(1, t * 2.5);
@@ -134,6 +136,8 @@ export function hairCardGeometry(guides, origin = [0, 0, 0], seg = 10) {
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   geo.setIndex(idx);
+  // tangentes explícitas (eje u, a través del mechón) para el brillo anisótropo
+  geo.computeTangents();
   geo.computeBoundingSphere();
   return geo;
 }
@@ -141,12 +145,14 @@ export function hairCardGeometry(guides, origin = [0, 0, 0], seg = 10) {
 export function hairMaterial(tex, color = '#2a211b') {
   // especular teñido del propio pelo (castaño) y poco reflejo del entorno: en los bordes rasantes
   // las tarjetas no se vuelven grises
+  // brillo anisótropo: la banda de luz se alarga a través de las hebras (eje u de la tarjeta)
   const m = new THREE.MeshPhysicalMaterial({
-    map: tex, color, vertexColors: true, roughness: 0.56, metalness: 0, side: THREE.DoubleSide,
+    map: tex, color, vertexColors: true, roughness: 0.48, metalness: 0, side: THREE.DoubleSide,
     alphaTest: 0.3, alphaToCoverage: true, envMapIntensity: 0.25,
-    specularIntensity: 0.26, specularColor: new THREE.Color('#a07a5c'),
+    specularIntensity: 0.34, specularColor: new THREE.Color('#b08a6a'),
+    anisotropy: 0.75, anisotropyRotation: 0,
     sheen: 0.25, sheenColor: new THREE.Color('#3a2a20'), sheenRoughness: 0.4,
   });
-  m.customProgramCacheKey = () => 'hair-v2';
+  m.customProgramCacheKey = () => 'hair-v3';
   return m;
 }

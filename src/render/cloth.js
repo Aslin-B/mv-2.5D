@@ -5,6 +5,7 @@ import * as THREE from 'three';
 // y la sombra usa la misma geometría que el pase principal (§9.4).
 
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _p = new THREE.Vector3();
+const _q = new THREE.Quaternion();
 // canal verde lineal del color base (normaliza la variación del forro)
 const b2s = (hex) => new THREE.Color(hex).g.toFixed(4);
 
@@ -96,10 +97,12 @@ function coatTextures({ base = '#29262c', line = '#b3b0b8' } = {}) {
 }
 
 export class Cape {
-  constructor(model, scene, { cols = 5, rows = 10, length = 0.74, palette = null, anchors = null, bone = 'chest', drag = 0.965, liningFlip = false, outward = 0.02, flare = 0.13, gather = 1 } = {}) {
+  constructor(model, scene, { cols = 5, rows = 10, length = 0.74, palette = null, anchors = null, bone = 'chest', drag = 0.965, liningFlip = false, outward = 0.02, flare = 0.13, gather = 1, open = 0 } = {}) {
     // flare: ensanche del bajo respecto al talle (vuelo de la falda del abrigo); gather: tela de más
-    // entre anclajes, que se recoge en pliegues verticales
+    // entre anclajes, que se recoge en pliegues verticales; open: separación hacia fuera del canto
+    // delantero en el bajo (faldones abiertos en V invertida)
     this.flare = flare;
+    this.open = open;
     this.gather = gather;
     this.model = model;
     this.bone = bone;
@@ -152,7 +155,11 @@ if (!clothOuter) metalnessFactor = 0.0;`);
       scene.add(mesh);
       const pos = Array.from({ length: n }, () => new THREE.Vector3());
       const prev = Array.from({ length: n }, () => new THREE.Vector3());
-      this.panels.push({ side, geo, mesh, pos, prev, anchors: (anchors || model.capeAnchors)[side], init: false });
+      const A = (anchors || model.capeAnchors)[side];
+      // canto delantero: la columna cuyo anclaje queda más cerca del centro del cuerpo
+      const inner = Math.abs(A[0].x) < Math.abs(A[A.length - 1].x) ? 0 : cols - 1;
+      const sgn = Math.sign(A[inner ? A.length - 1 : 0].x) || 1;
+      this.panels.push({ side, geo, mesh, pos, prev, anchors: A, init: false, inner, sgn });
     }
     this.colliders = [];
     this.wind = 0;
@@ -257,6 +264,20 @@ if (!clothOuter) metalnessFactor = 0.0;`);
           if (r < R - 2) this.constrain(pos, i, i + 2 * C, segV * 2, r === 0, 0.5);
           // flexión horizontal: conserva la curvatura del talle a lo largo de la falda (cono, no tabla)
           if (c < C - 2 && r > 0) this.constrain(pos, i, i + 2, segH2[c] * wide * (this.gather > 1 ? 0.86 : 1), false, 0.4);
+        }
+        // Canto delantero abierto: se aparta hacia su lado conforme baja (rigidez del ribete)
+        if (this.open) {
+          const lat = _b.set(P.sgn, 0, 0).applyQuaternion(this.model.bones[this.bone].getWorldQuaternion(_q));
+          for (let r = 1; r < R; r++) {
+            const want = this.open * Math.pow(r / (R - 1), 1.15);
+            for (const [c, k] of [[P.inner, 0.8], [P.inner + (P.inner ? -1 : 1), 0.4]]) {
+              this.anchorWorld(P, P.inner, _a);
+              const p = pos[r * C + c];
+              const cur = _p.subVectors(p, _a).dot(lat);
+              const w2 = want * (c === P.inner ? 1 : 0.8);
+              if (cur < w2) p.addScaledVector(lat, (w2 - cur) * k);
+            }
+          }
         }
         // Colisión con cápsulas
         for (let i = C; i < pos.length; i++) this.collide(pos[i]);

@@ -168,7 +168,7 @@ export class EclipseOrb {
     this.boltT = 0;
     this.group.add(this.core, this.corona);
     scene.add(this.wisps, this.flecks, this.sparks, this.bolts);
-    this.light = light ? new THREE.PointLight('#a066ff', 0, 3.2, 2) : null;
+    this.light = light ? new THREE.PointLight('#b298ff', 0, 3.2, 2) : null;
     if (this.light) scene.add(this.light);
     this.ribbons = Array.from({ length: RIBBONS }, (_, k) => {
       const tilt = (k / RIBBONS - 0.5) * 2.2 + Math.sin(k * 7.3) * 0.4;
@@ -336,7 +336,7 @@ export class EclipseOrb {
     this.bolts.material.opacity = clamp(this.power * 1.3 - 0.3, 0, 1) * (0.6 + 0.4 * Math.random());
     if (this.light) {
       this.light.position.copy(c);
-      this.light.intensity = (0.35 + this.power * 1.9) * (1 + this.pulse * 1.2) * (this.flying ? 0.6 : 1);
+      this.light.intensity = (0.25 + this.power * 1.0) * (1 + this.pulse * 1.2) * (this.flying ? 0.6 : 1);
     }
   }
 }

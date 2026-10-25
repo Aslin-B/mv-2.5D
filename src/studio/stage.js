@@ -46,6 +46,16 @@ rim.position.set(2.6, 3.0, -3.0);
 scene.add(rim);
 CHAR_EDGE.color.value.setRGB(0.25, 0.24, 0.32);
 
+// Luz de retrato para los primeros planos (como el recuadro del rostro de la lámina): relleno bajo,
+// principal más intensa y lateral, contraluz frío marcado. Las sombras del rostro quedan profundas.
+export function portrait(on) {
+  hemi.intensity = on ? 0.2 : 0.55;
+  scene.environmentIntensity = on ? 0.14 : 0.3;
+  key.intensity = on ? 4.4 : 3.2;
+  key.position.set(on ? -2.8 : -2.2, on ? 3.2 : 4.2, on ? 2.4 : 3.2);
+  rim.intensity = on ? 3.2 : 2.2;
+}
+
 // suelo de losas
 {
   const set = stoneFlags(512, 7);

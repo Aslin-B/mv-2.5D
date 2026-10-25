@@ -43,10 +43,19 @@ vec3 cmPerturb(vec3 surf_pos, vec3 surf_norm, vec2 dHdxy, float faceDirection) {
   vec3 vGrad = sign(fDet) * (dHdxy.x * R1 + dHdxy.y * R2);
   return normalize(abs(fDet) * surf_norm - vGrad);
 }
+// Vello corto (barba de pocos días y cejas): trazos cortos verticales; dens = densidad 0..1.
+float cmStubble(vec3 p, float dens){
+  if (dens < 0.01) return 0.0;
+  vec3 q = p * vec3(2300.0, 1100.0, 2300.0);
+  float n = vnoise(q) * 0.65 + vnoise(q * 2.13 + 7.1) * 0.35;
+  float t = mix(0.86, 0.26, dens);
+  return smoothstep(t, t + 0.06, n);
+}
 float cmHeight(vec3 p, float pat, float wear){
   float h = 0.0;
-  if (pat < 0.5) {               // piel: variación muy suave
-    h = fbm3(p*160.0)*0.25;
+  if (pat < 0.5) {               // piel: ondulación suave, poros (hoyuelos finos) y vello corto
+    h = fbm3(p*160.0)*0.22 - smoothstep(0.62, 0.8, vnoise(p*1500.0))*0.35 + vnoise(p*600.0)*0.12;
+    h += cmStubble(p, max(wear - 1.0, 0.0)) * 0.55;
   } else if (pat < 1.5) {        // gambesón acolchado: canales verticales + puntadas
     float ang = atan(p.x, p.z + 0.02) * 9.0;
     float ch = abs(fract(ang) - 0.5);
@@ -116,9 +125,24 @@ varying vec4 vSurf;
 varying vec3 vObjPos;
 varying vec3 vObjN;
 float cmOrn = 0.0;
+float cmSkin = 0.0;
 ${NOISE}
 ${PERTURB}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
+// piel (patrón 0): dispersión bajo la superficie aproximada en la luz directa (ver más abajo) y
+// vello corto pintado por trazos; w = 1 + densidad de vello (barba, cejas; w ≤ 1: piel sin vello)
+if (vSurf.z < 0.5) {
+  cmSkin = 1.0;
+  float hd = max(vSurf.w - 1.0, 0.0);
+  if (hd > 0.01) {
+    vec3 q = vObjPos * vec3(2300.0, 1100.0, 2300.0);
+    float far = smoothstep(0.35, 1.1, length(fwidth(q)));
+    // de lejos, cobertura media con grano (mechones y calvas de 1–2 mm), no un tinte uniforme
+    float grain = 0.7 + 0.6 * vnoise(vObjPos * 1100.0) - 0.3 * vnoise(vObjPos * 420.0 + 3.3);
+    float st = mix(cmStubble(vObjPos, hd), clamp(hd * 0.9 * grain, 0.0, 1.0), far);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.026, 0.02, 0.016), st * 0.92);
+  }
+}
 // esmalte de placa: moteado de forja a baja frecuencia (rompe el aspecto de plástico liso)
 if (vSurf.z > 8.5 && vSurf.z < 9.5) diffuseColor.rgb *= 0.88 + 0.2 * fbm3(vObjPos * 22.0);
 // metal grabado con hilo de plata (10), brocado con hilo de plata (11), cuero repujado (12).
@@ -147,8 +171,20 @@ if (vSurf.z > 9.5) {
     diffuseColor.rgb *= 1.0 - f * 0.35;
   }
 }`)
+      .replace('#include <lights_physical_pars_fragment>', THREE.ShaderChunk.lights_physical_pars_fragment.replace(
+        'reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );',
+        `vec3 cmIrr = irradiance;
+  if (cmSkin > 0.5) {
+    // luz envolvente por canal: el rojo atraviesa más la piel y suaviza el terminador
+    float cmNL = dot(geometryNormal, directLight.direction);
+    vec3 cmW = vec3(0.3, 0.19, 0.15);
+    cmIrr = clamp((vec3(cmNL) + cmW) / (1.0 + cmW), 0.0, 1.0) * directLight.color;
+  }
+  reflectedLight.directDiffuse += cmIrr * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );`))
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
 roughnessFactor = clamp(vSurf.x + (fbm3(vObjPos*70.0)-0.5)*0.12, 0.04, 1.0);
+// el vello corto es mate; la piel entre poros conserva su brillo
+if (vSurf.z < 0.5) roughnessFactor = mix(roughnessFactor, 0.78, cmStubble(vObjPos, max(vSurf.w - 1.0, 0.0)));
 if (vSurf.z > 9.5 && vSurf.z < 11.5) roughnessFactor = mix(roughnessFactor, 0.32, cmOrn);`)
       .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
 metalnessFactor = vSurf.y;
@@ -182,7 +218,7 @@ if (vSurf.z > 9.5 && vSurf.z < 11.5) metalnessFactor = mix(metalnessFactor, 1.0,
 // el búfer de media precisión, y el bloom los esparcía como un halo magenta alrededor de Aren
 gl_FragColor.rgb = (any(isnan(gl_FragColor.rgb)) || any(isinf(gl_FragColor.rgb))) ? vec3(0.0) : min(gl_FragColor.rgb, vec3(48.0));`);
   };
-  mat.customProgramCacheKey = () => 'charmat-v9';
+  mat.customProgramCacheKey = () => 'charmat-v12';
   return mat;
 }
 

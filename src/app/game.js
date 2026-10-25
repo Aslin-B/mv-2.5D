@@ -10,7 +10,7 @@ import { ATTACKS, MAGE_CARRY } from '../animation/poses.js';
 import { Projectiles } from '../actors/projectiles.js';
 import { Sentinel } from '../actors/sentinel.js';
 import { RestFountain, CaudalFragment, ClavijaPedestal } from '../world/mechanisms.js';
-import { buildShadowMage, MAGE_COAT, MAGE_GLOW } from '../render/shadowMageModel.js';
+import { buildShadowMage, MAGE_GLOW } from '../render/shadowMageModel.js';
 import { EclipseOrb } from '../render/eclipseOrb.js';
 import { Animator } from '../animation/animator.js';
 import { buildMarauder, cloneMarauder } from '../render/marauderModel.js';
@@ -141,9 +141,8 @@ export class Game {
     scene.add(model.root);
     this.hero = new Hero(this, SPAWN.x, SPAWN.y);
     this.heroAnim = new Animator(model, { carry: MAGE_CARRY });
-    const coatOpts = { cols: 9, rows: 16, flare: 0.45, gather: 1.5, palette: MAGE_COAT, bone: 'hips', drag: 0.95 };
-    const coatFront = new Cape(model, scene, { ...coatOpts, length: 0.68, anchors: model.coatAnchors.front, outward: -0.03 });
-    const coatBack = new Cape(model, scene, { ...coatOpts, length: 0.72, anchors: model.coatAnchors.back, outward: 0.03, liningFlip: true });
+    const coatFront = new Cape(model, scene, model.coatCloth.front);
+    const coatBack = new Cape(model, scene, model.coatCloth.back);
     this.heroCape = {
       parts: [coatFront, coatBack], panels: [...coatFront.panels, ...coatBack.panels],
       step(dt, w) { coatFront.step(dt, w * 0.55); coatBack.step(dt, w * 0.55); },

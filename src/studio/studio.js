@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { buildShadowMage, MAGE_COAT, MAGE_GLOW } from '../render/shadowMageModel.js';
+import { buildShadowMage, MAGE_GLOW } from '../render/shadowMageModel.js';
 import { Animator } from '../animation/animator.js';
 import { MAGE_CARRY } from '../animation/poses.js';
 import { Cape } from '../render/cloth.js';
 import { softDot } from '../render/textures.js';
 import { EclipseOrb, ORB_PHASES } from '../render/eclipseOrb.js';
-import { renderer, scene, camera, post } from './stage.js';
+import { renderer, scene, camera, post, portrait } from './stage.js';
 
 // Estudio del personaje: el mismo modelo, animador, tela, poder y posproceso que el juego, en un
 // plató neutro con encuadres fijos (cuerpo de 3/4, rostro, espalda y las cuatro fases del poder).
@@ -17,8 +17,8 @@ const model = buildShadowMage();
 const buildMs = performance.now() - t0;
 scene.add(model.root);
 const anim = new Animator(model, { carry: MAGE_CARRY });
-const coatFront = new Cape(model, scene, { cols: 9, rows: 16, length: 0.68, flare: 0.45, gather: 1.5, palette: MAGE_COAT, anchors: model.coatAnchors.front, bone: 'hips', drag: 0.95, outward: -0.03 });
-const coatBack = new Cape(model, scene, { cols: 9, rows: 16, length: 0.72, flare: 0.45, gather: 1.5, palette: MAGE_COAT, anchors: model.coatAnchors.back, bone: 'hips', drag: 0.95, outward: 0.03, liningFlip: true });
+const coatFront = new Cape(model, scene, model.coatCloth.front);
+const coatBack = new Cape(model, scene, model.coatCloth.back);
 const dot = softDot(64);
 const orb = new EclipseOrb(scene, { dot, light: true });
 
@@ -35,8 +35,10 @@ const VIEWS = {
   coatS: { yaw: -1.57, target: 'body', off: [0, -0.4, 0], dist: 2.6, fov: 30 },
   bind: { yaw: -0.55, target: 'body', dist: 4.6, fov: 30, bind: true },
   idle: { yaw: -0.55, target: 'body', dist: 4.6, fov: 30 },
-  front: { yaw: -0.5, target: 'body', off: [-0.08, 0.02, 0], dist: 4.7, fov: 29, chargeT: 2.2, cast: 'R', hold: 'present', look: [-0.6, 1.7, 4] },
-  face: { yaw: -0.5, target: 'head', off: [0.0, -0.02, 0], dist: 1.75, fov: 14.5, eyeYaw: 0.3, headTurn: -0.15 },
+  front: { yaw: -0.45, target: 'body', off: [-0.12, 0.0, 0], dist: 3.9, fov: 29, chargeT: 2.2, cast: 'R', hold: 'offer', look: [-0.3, 1.7, 4] },
+  // rostro: como el recuadro de la lámina (ojos a algo más de un cuarto de la altura, cabeza girada
+  // hacia la derecha de la imagen, mirada a cámara, hombro y broche abajo)
+  face: { yaw: 0.62, target: 'eyes', off: [-0.035, -0.1, 0], dist: 1.75, fov: 15, eyeYaw: -0.5, headTurn: -0.3, portrait: true },
   faceF: { yaw: 0, target: 'head', off: [0, 0.035, 0], dist: 0.62, fov: 24, look: [0, 1.7, 4], noHair: true },
   faceP: { yaw: -1.5, target: 'head', off: [0, 0.035, 0], dist: 0.62, fov: 24, noHair: true },
   faceH: { yaw: -0.5, target: 'head', off: [0, 0.035, 0], dist: 0.62, fov: 24, look: [0, 1.7, 4] },
@@ -88,6 +90,7 @@ function pose(v, steps = 150) {
 
 function view(name) {
   const v = VIEWS[name];
+  portrait(!!v.portrait);
   const w = window.innerWidth, h = window.innerHeight;
   renderer.setSize(w, h, false);
   post.setSize(w, h);
@@ -96,6 +99,7 @@ function view(name) {
   pose(v);
   const tg = new THREE.Vector3();
   if (v.target === 'head') model.bones.head.getWorldPosition(tg);
+  else if (v.target === 'eyes') { const a = new THREE.Vector3(), b = new THREE.Vector3(); model.eyes[0].group.getWorldPosition(a); model.eyes[1].group.getWorldPosition(b); tg.copy(a).add(b).multiplyScalar(0.5); }
   else if (v.target === 'palm') (anim.activeFocus || model.foci.R).group.getWorldPosition(tg);
   else if (v.target === 'palmOff') model.foci[anim.castSide === 'R' ? 'L' : 'R'].group.getWorldPosition(tg);
   else tg.set(model.root.position.x, 0.95, 0);

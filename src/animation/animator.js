@@ -240,8 +240,10 @@ export class Animator {
     if (cast) this.castT = cast.t;
     this.launchW = cast && cast.launch != null ? smoothstep(0, 0.05, cast.launch) * (1 - smoothstep(0.26, 0.5, cast.launch)) : 0;
     // «present»: sostener la esfera erguido y sereno (lámina de frente), sin flexionar las piernas
-    const present = !!(cast && cast.hold === 'present');
+    // «offer»: igual de erguido, con la esfera ofrecida a un lado a la altura del hombro (lámina de 3/4)
+    const present = !!(cast && (cast.hold === 'present' || cast.hold === 'offer'));
     this.present = present;
+    this.offer = !!(cast && cast.hold === 'offer');
     const legsW = ground && !present ? 1 - runW : 0;
     const ct = this.castT;
     const wS = smoothstep(0.0, 0.3, ct), wC = smoothstep(0.3, 1.5, ct), wE = smoothstep(1.5, 3.0, ct);
@@ -262,6 +264,9 @@ export class Animator {
         pose.hip[0] += src.hip[0] * w * legsW; pose.hip[1] += src.hip[1] * w * legsW; pose.hip[2] += src.hip[2] * w * legsW;
       };
       apply(body, this.castW * (present ? 0.25 : 1));
+      // contrapposto al sostener la esfera erguido: peso sobre la pierna de atrás, cadera ladeada y
+      // hombros en contra
+      if (present) addPose(pose, { hip: [0, -0.02 * this.castW, 0], hips: [0, -6 * this.castW, -4 * this.castW], spine: [0, 3 * this.castW, 3 * this.castW], chest: [-2 * this.castW, 4 * this.castW, 2 * this.castW] });
       // temblor contenido al sostener el eclipse
       if (wE > 0.3) {
         const tr = wE * this.castW;
@@ -269,7 +274,7 @@ export class Animator {
       }
       if (this.launchW > 0) apply(MAGE_CAST.launch, this.launchW);
     }
-    this.stanceK = damp(this.stanceK, 1 + (wC * 1.1 + wE * 0.55) * this.castW * legsW + this.launchW * 0.9 * legsW, 0.12, dt);
+    this.stanceK = damp(this.stanceK, 1 + (wC * 1.1 + wE * 0.55) * this.castW * legsW + this.launchW * 0.9 * legsW + (present && ground ? 0.9 * this.castW : 0), 0.12, dt);
 
     // Brazales gemelos: el brazo del lado de la cámara lanza; al mirar a la izquierda se refleja la pose.
     if (this.twin) this.castSide = this.forceCast || (this.yaw >= 0 ? 'R' : 'L');
@@ -691,6 +696,13 @@ export class Animator {
       pn.set(out * 0.15, 1, 0.1).normalize();
       fd.set(out * 0.55, 0, 1).addScaledVector(pn, -0.0).normalize();
       fd.addScaledVector(pn, -fd.dot(pn)).normalize();
+      if (this.offer) {
+        // brazo abierto al costado, antebrazo hacia fuera y adelante, palma arriba bajo la esfera
+        hold.set(sh.x + out * 0.3, sh.y - 0.2 - r * 0.3, sh.z + 0.3);
+        pn.set(out * 0.12, 1, -0.05).normalize();
+        fd.set(out * 0.85, 0, 0.55).normalize();
+        fd.addScaledVector(pn, -fd.dot(pn)).normalize();
+      }
     }
     const w = this.castW;
     for (let i = 0; i < 3; i++) {
@@ -714,7 +726,7 @@ export class Animator {
     const orb = this.castPose.orb.copy(hold).addScaledVector(pn, r * 1.05 + 0.022);
     this.castPose.r = r;
     this.castPose.la = la.clone();
-    this.containW = wE * this.castW * (1 - this.launchW);
+    this.containW = this.offer ? 0 : wE * this.castW * (1 - this.launchW);
     void orb;
   }
 
@@ -773,7 +785,7 @@ export class Animator {
       // semilla: palma en cuenco; condensación y eclipse: dedos tensos que sujetan la fuerza
       const hold = mix(P.cup, P.claw, clamp(wC * 0.7 + wE * 0.3, 0, 1));
       cp = mix(cp, hold, this.castW); cw = 1;
-      op = mix(op, mix(mix(P.relax, P.claw, wC * 0.6), P.contain, wE), this.castW);
+      if (!this.offer) op = mix(op, mix(mix(P.relax, P.claw, wC * 0.6), P.contain, wE), this.castW);
     }
     if (this.launchW > 0.05) cp = mix(cp, P.open, this.launchW);
     const tgt = { [cs]: cp, [os]: op };
