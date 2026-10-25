@@ -257,7 +257,8 @@ export function buildMistBand({ x0, x1, y0, y1, z, color = '#c9b2a6', alpha = 0.
       void main(){
         vec2 p = vec2(vUv.x * width * 0.035 + time * 0.012, vUv.y * 2.2);
         float n = nn(p) * 0.55 + nn(p * 2.7 + vec2(time * 0.02, 0.0)) * 0.3 + nn(p * 7.0) * 0.15;
-        float g = pow(1.0 - vUv.y, 1.6);
+        // con MSAA el borde superior se evalúa fuera del plano (vUv.y > 1): la base no puede ser negativa
+        float g = pow(clamp(1.0 - vUv.y, 0.0, 1.0), 1.6);
         float a = alpha * g * smoothstep(0.15, 0.75, n + g * 0.35);
         a *= smoothstep(0.0, 0.04, vUv.x) * smoothstep(1.0, 0.96, vUv.x);
         gl_FragColor = vec4(color, a);

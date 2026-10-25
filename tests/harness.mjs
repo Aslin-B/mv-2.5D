@@ -4,9 +4,33 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 
-export async function openGame({ url = process.env.GAME_URL || 'http://localhost:5173/', query = 'test=1&q=medio', width = 1280, height = 720 } = {}) {
+// Matemática de las GPU de Apple (Safari): pow() con base negativa devuelve NaN. SwiftShader
+// devuelve |x|^y, así que sin esta emulación las pruebas no ven los NaN que en un Mac dejaban la
+// pantalla en negro. Se inserta tras las declaraciones de precisión de cada sombreador GLSL 3.
+function emulateAppleMath() {
+  const LIB = `
+float apPow(float x, float y){ return x < 0.0 ? uintBitsToFloat(0x7fc00000u) : pow(x, y); }
+vec2 apPow(vec2 x, vec2 y){ return vec2(apPow(x.x, y.x), apPow(x.y, y.y)); }
+vec3 apPow(vec3 x, vec3 y){ return vec3(apPow(x.x, y.x), apPow(x.y, y.y), apPow(x.z, y.z)); }
+vec4 apPow(vec4 x, vec4 y){ return vec4(apPow(x.x, y.x), apPow(x.y, y.y), apPow(x.z, y.z), apPow(x.w, y.w)); }
+#define pow apPow
+`;
+  const orig = WebGL2RenderingContext.prototype.shaderSource;
+  WebGL2RenderingContext.prototype.shaderSource = function (sh, src) {
+    if (src.startsWith('#version 300 es')) {
+      const lines = src.split('\n');
+      let at = -1;
+      for (let i = 0; i < Math.min(lines.length, 60); i++) if (/^precision\s/.test(lines[i])) at = i;
+      if (at >= 0) { lines.splice(at + 1, 0, LIB); src = lines.join('\n'); }
+    }
+    return orig.call(this, sh, src);
+  };
+}
+
+export async function openGame({ url = process.env.GAME_URL || 'http://localhost:5173/', query = 'test=1&q=medio', width = 1280, height = 720, appleMath = false } = {}) {
   const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const page = await browser.newPage({ viewport: { width, height } });
+  if (appleMath) await page.addInitScript(emulateAppleMath);
   const logs = [];
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') logs.push(`[${m.type()}] ${m.text()}`); });
   page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));

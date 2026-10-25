@@ -26,6 +26,10 @@
   sin que el cabello la tape.
 - En el juego: la secuencia de carga (semilla, condensación, eclipse, lanzamiento) con el harness de
   pruebas, para comprobar que lo que mejora en el estudio se ve igual jugando.
+- Compatibilidad: la prueba funcional «Sin NaN ni apagones con la matemática de Safari» emula las GPU
+  de Apple (`pow()` de base negativa = NaN) y exige un búfer HDR sin valores no finitos en las cinco
+  salas y durante la carga. Todo sombreador nuevo debe acotar la base de `pow()` y no normalizar
+  vectores que puedan anularse.
 
 ## v3 · Métricas por recuadro (CIE L\*a\*b\*)
 

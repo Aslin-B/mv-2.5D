@@ -101,11 +101,15 @@ vec3 hCam = (inverse(modelMatrix) * vec4(cameraPosition, 1.0)).xyz;
 vec3 hV = normalize(hCam - position);
 vec3 hT = normalize(aTan + vec3(1e-6));
 // normal de cilindro hacia el observador, mezclada con la del volumen del mechón
-vec3 hN = normalize(hV - hT * dot(hV, hT));
-vec3 objectNormal = normalize(mix(hN, normal, 0.5));`)
+// (mirando a lo largo de la hebra el vector se anula: normalizarlo daría NaN en las GPU de Apple)
+vec3 hR = hV - hT * dot(hV, hT);
+vec3 hN = dot(hR, hR) > 1e-10 ? normalize(hR) : normal;
+vec3 hM = mix(hN, normal, 0.5);
+vec3 objectNormal = dot(hM, hM) > 1e-10 ? normalize(hM) : normal;`)
       .replace('#include <begin_vertex>', `
-vec3 transformed = vec3(position) + normalize(cross(hT, hV)) * aStrand.x * aStrand.y;`);
+vec3 hS = cross(hT, hV);
+vec3 transformed = vec3(position) + (dot(hS, hS) > 1e-12 ? normalize(hS) : vec3(0.0)) * aStrand.x * aStrand.y;`);
   };
-  m.customProgramCacheKey = () => 'hair-strands-v2';
+  m.customProgramCacheKey = () => 'hair-strands-v3';
   return m;
 }

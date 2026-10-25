@@ -34,7 +34,7 @@ export class Particles {
         varying vec4 vC;
         #include <fog_pars_vertex>
         void main(){ vC = pcolor; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-          gl_PointSize = psize * scale / -mvPosition.z; gl_Position = projectionMatrix * mvPosition;
+          gl_PointSize = max(psize, 0.0) * scale / max(-mvPosition.z, 0.05); gl_Position = projectionMatrix * mvPosition;
           #include <fog_vertex>
         }`,
       fragmentShader: /* glsl */ `

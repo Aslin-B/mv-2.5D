@@ -52,13 +52,17 @@ fondo se ven cordilleras de roca pintada, ruinas góticas en la bruma y bandadas
 ## Pruebas y juez de calidad
 
 ```bash
-npm test                               # 30 pruebas funcionales deterministas (Chromium sin cabeza)
+npm test                               # 31 pruebas funcionales deterministas (Chromium sin cabeza)
 node tests/judge/capture.mjs <n>       # capturas reales, tiras de animación y métricas
 node tests/judge/summary.mjs <n>       # tabla de métricas
 node tests/judge/preview.mjs <dir> x,y,pasos,nombre ...   # capturas rápidas por sala
 python3 tests/judge/style.py <dir>     # métricas de estilo frente a tests/judge/referencia.json
 node tests/judge/sheet.mjs <dir>       # lámina del personaje en el estudio y sus métricas (juez v3)
 ```
+
+Una de las pruebas imita la matemática de las GPU de Apple (en Safari, `pow()` con base negativa
+devuelve NaN y el bloom lo esparcía hasta dejar la pantalla en negro): recorre las salas en calidad
+media y comprueba que el búfer HDR no tiene valores no finitos.
 
 La rúbrica y los topes automáticos están en [`docs/CALIDAD.md`](docs/CALIDAD.md); los informes de
 cada iteración, en [`docs/juez/`](docs/juez/). Desde la iteración 4 el juez (v2) compara además el

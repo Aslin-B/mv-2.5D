@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { HDR_SAFE } from './hdrSafe.js';
 
 // Material PBR estándar de Three.js ampliado con parámetros por vértice:
 // surf = (rugosidad, metalicidad, patrón, desgaste). El patrón genera relieve procedural
@@ -34,14 +35,17 @@ float filig3(vec3 p, vec3 n, float w){
 
 const PERTURB = /* glsl */ `
 vec3 cmPerturb(vec3 surf_pos, vec3 surf_norm, vec2 dHdxy, float faceDirection) {
-  vec3 vSigmaX = normalize(dFdx(surf_pos.xyz));
-  vec3 vSigmaY = normalize(dFdy(surf_pos.xyz));
+  // vectores nulos (derivadas nulas) normalizados dan NaN en las GPU de Apple: se protegen
+  vec3 vSigmaX = normalize(dFdx(surf_pos.xyz) + vec3(1e-9));
+  vec3 vSigmaY = normalize(dFdy(surf_pos.xyz) + vec3(1e-9));
   vec3 vN = surf_norm;
   vec3 R1 = cross(vSigmaY, vN);
   vec3 R2 = cross(vN, vSigmaX);
   float fDet = dot(vSigmaX, R1) * faceDirection;
   vec3 vGrad = sign(fDet) * (dHdxy.x * R1 + dHdxy.y * R2);
-  return normalize(abs(fDet) * surf_norm - vGrad);
+  vec3 pn = abs(fDet) * surf_norm - vGrad;
+  float l2 = dot(pn, pn);
+  return l2 > 1e-12 ? pn * inversesqrt(l2) : surf_norm;
 }
 // Vello corto (barba de pocos días y cejas): trazos cortos verticales; dens = densidad 0..1.
 float cmStubble(vec3 p, float dens){
@@ -127,7 +131,8 @@ varying vec3 vObjN;
 float cmOrn = 0.0;
 float cmSkin = 0.0;
 ${NOISE}
-${PERTURB}`)
+${PERTURB}
+${HDR_SAFE}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
 // piel (patrón 0): dispersión bajo la superficie aproximada en la luz directa (ver más abajo) y
 // vello corto pintado por trazos; w = 1 + densidad de vello (barba, cejas; w ≤ 1: piel sin vello)
@@ -216,9 +221,10 @@ if (vSurf.z > 9.5 && vSurf.z < 11.5) metalnessFactor = mix(metalnessFactor, 1.0,
       .replace('#include <opaque_fragment>', `#include <opaque_fragment>
 // saneado HDR: una luz puntual muy cercana sobre una placa pulida podía dar valores no finitos en
 // el búfer de media precisión, y el bloom los esparcía como un halo magenta alrededor de Aren
-gl_FragColor.rgb = (any(isnan(gl_FragColor.rgb)) || any(isinf(gl_FragColor.rgb))) ? vec3(0.0) : min(gl_FragColor.rgb, vec3(48.0));`);
+// (prueba por bits: isnan() puede desaparecer con la matemática rápida de Metal)
+gl_FragColor.rgb = min(hdrSafe(gl_FragColor.rgb), vec3(48.0));`);
   };
-  mat.customProgramCacheKey = () => 'charmat-v12';
+  mat.customProgramCacheKey = () => 'charmat-v13';
   return mat;
 }
 

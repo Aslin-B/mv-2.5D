@@ -5,6 +5,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { HDR_SAFE } from './hdrSafe.js';
 
 // Cadena de posproceso (biblia §9.2): escena HDR con MSAA -> oclusión ambiental (alto) ->
 // bloom físico moderado -> mapeo tonal ACES y sRGB -> etapa final con viñeta, bandas
@@ -44,13 +45,14 @@ const FinalShader = {
     uniform vec3 flashColor, lift, shadowTint, highTint;
     uniform vec2 texel;
     varying vec2 vUv;
+    ${HDR_SAFE}
     float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233)) + time * 61.0) * 43758.5453); }
     void main(){
-      vec3 c = texture2D(tDiffuse, vUv).rgb;
+      vec3 c = hdrSafe(texture2D(tDiffuse, vUv).rgb);
       // enfoque suave (máscara de desenfoque en cruz): recupera la nitidez del detalle de media escala
       if (sharpen > 0.0) {
-        vec3 n4 = texture2D(tDiffuse, vUv + vec2(texel.x, 0.0)).rgb + texture2D(tDiffuse, vUv - vec2(texel.x, 0.0)).rgb
-                + texture2D(tDiffuse, vUv + vec2(0.0, texel.y)).rgb + texture2D(tDiffuse, vUv - vec2(0.0, texel.y)).rgb;
+        vec3 n4 = hdrSafe(texture2D(tDiffuse, vUv + vec2(texel.x, 0.0)).rgb) + hdrSafe(texture2D(tDiffuse, vUv - vec2(texel.x, 0.0)).rgb)
+                + hdrSafe(texture2D(tDiffuse, vUv + vec2(0.0, texel.y)).rgb) + hdrSafe(texture2D(tDiffuse, vUv - vec2(0.0, texel.y)).rgb);
         c = max(c + (c - n4 * 0.25) * sharpen, 0.0);
       }
       // gradación suave: sombras ligeramente frías, saturación contenida
@@ -119,9 +121,23 @@ export class PostFX {
     this.bloom = null;
     if (q.bloom) {
       this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x * pr, size.y * pr), 0.4, 0.42, 0.95);
+      // el filtro de luces del bloom lee la escena saneada: un píxel no finito ya no se esparce
+      const hp = this.bloom.materialHighPassFilter;
+      hp.fragmentShader = HDR_SAFE + hp.fragmentShader.replace(
+        'vec4 texel = texture2D( tDiffuse, vUv );', 'vec4 texel = texture2D( tDiffuse, vUv ); texel.rgb = hdrSafe( texel.rgb );');
+      if (!hp.fragmentShader.includes('hdrSafe( texel.rgb )')) console.warn('bloom: no se pudo sanear el filtro de luces');
+      hp.needsUpdate = true;
       composer.addPass(this.bloom);
     }
-    composer.addPass(new OutputPass());
+    // la salida (mapeo tonal y sRGB) también lee la escena acotada: en Metal pow() de un valor
+    // negativo da NaN. Es un sombreador GLSL ES 1.0 (sin acceso a los bits); clamp() en Metal
+    // descarta el NaN (fmax devuelve el operando que no lo es) y recorta infinitos y negativos.
+    const out = new OutputPass();
+    out.material.fragmentShader = out.material.fragmentShader.replace(
+      'gl_FragColor = texture2D( tDiffuse, vUv );', 'gl_FragColor = texture2D( tDiffuse, vUv ); gl_FragColor.rgb = clamp( gl_FragColor.rgb, 0.0, 512.0 );');
+    if (!out.material.fragmentShader.includes('clamp( gl_FragColor.rgb')) console.warn('salida: no se pudo acotar');
+    out.material.needsUpdate = true;
+    composer.addPass(out);
     this.final = new ShaderPass(FinalShader);
     this.final.uniforms.sharpen.value = q.sharpen ?? 0;
     this.final.uniforms.texel.value.set(1 / (size.x * pr), 1 / (size.y * pr));

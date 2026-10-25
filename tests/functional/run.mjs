@@ -250,6 +250,42 @@ const S = () => g.state();
   const s = await S();
   check('Fin del nivel con estadísticas', s.state === 'end', `estado=${s.state}`);
 }
+// T15 sin valores no válidos en el búfer HDR con la matemática de las GPU de Apple (Safari), en
+// calidad media (antialiasing y bloom) por las cinco salas y durante la carga del eclipse: un solo
+// NaN esparcido por el bloom dejaba la pantalla en negro y parpadeando
+{
+  const a = await openGame({ query: 'test=1&q=medio&cine=0', appleMath: true });
+  const bad = [];
+  let dim = 1e9, bright = 0;
+  for (const [x, y, n, keys] of [[-2, 0, 30], [30, 1.6, 30], [60, 1.6, 30], [95, 1.6, 30], [115, 1.6, 30], [6, 0, 40, 'attack'], [6, 0, 150, 'attack']]) {
+    await a.teleport(x, y, 1);
+    if (keys) await a.input({ [keys]: true });
+    await a.step(n);
+    const r = await a.eval(() => {
+      const G = window.__game.game, R = G.renderer, C = G.post.composer;
+      G.render(1 / 60);
+      const half = (h) => ((h >> 10) & 31) === 31;   // exponente lleno: NaN o infinito
+      let nonFinite = 0;
+      for (const rt of [C.renderTarget1, C.renderTarget2, G.post.bloom.renderTargetBright]) {
+        const buf = new Uint16Array(rt.width * rt.height * 4);
+        R.readRenderTargetPixels(rt, 0, 0, rt.width, rt.height, buf);
+        for (let i = 0; i < buf.length; i++) if ((i & 3) !== 3 && half(buf[i])) nonFinite++;
+      }
+      const c2 = document.createElement('canvas'); c2.width = 160; c2.height = 90;
+      const ctx = c2.getContext('2d'); ctx.drawImage(R.domElement, 0, 0, 160, 90);
+      const d = ctx.getImageData(0, 0, 160, 90).data; let s = 0;
+      for (let i = 0; i < d.length; i += 4) s += (d[i] + d[i + 1] + d[i + 2]) / 3;
+      return { nonFinite, mean: s / (160 * 90) };
+    });
+    if (r.nonFinite) bad.push(`x=${x}: ${r.nonFinite}`);
+    dim = Math.min(dim, r.mean); bright = Math.max(bright, r.mean);
+    await a.input({});
+  }
+  const aErrs = a.logs.filter((l) => !l.includes('AudioContext'));
+  await a.close();
+  check('Sin NaN ni apagones con la matemática de Safari', !bad.length && dim > 25 && bright < 160 && !aErrs.length,
+    `no finitos: ${bad.join(', ') || 'ninguno'} · luminancia media ${dim.toFixed(0)}–${bright.toFixed(0)}${aErrs.length ? ' · ' + aErrs[0] : ''}`);
+}
 const errs = g.logs.filter((l) => !l.includes('AudioContext'));
 check('Sin errores en consola', errs.length === 0, errs.slice(0, 3).join(' | ') || 'ninguno');
 const okN = results.filter((r) => r.ok).length;

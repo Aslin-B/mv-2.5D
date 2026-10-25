@@ -117,17 +117,7 @@ export class Game {
     scene.add(this.sky);
     scene.add(buildMountains());
     scene.add(buildRuins());
-    // Entorno de reflejos a partir del propio cielo (PMREM)
-    {
-      const pm = new THREE.PMREMGenerator(renderer);
-      const envScene = new THREE.Scene();
-      const sky2 = buildSky();
-      sky2.scale.setScalar(0.1);
-      envScene.add(sky2);
-      this.envRT = pm.fromScene(envScene, 0.02, 0.1, 200);
-      scene.environment = this.envRT.texture;
-      pm.dispose();
-    }
+    this.buildEnvMap();
     this.lights = buildLights(scene, { shadowSize: q.shadowSize });
 
     this.tex = { dot: softDot(64), shaft: shaftTexture(), waterN: waterNormals(), flare: flareTexture() };
@@ -221,6 +211,16 @@ export class Game {
     }
     this.bindEvents();
     window.addEventListener('resize', () => this.onResize());
+    // Si el navegador pierde el contexto WebGL (memoria de vídeo, GPU reiniciada), three.js deja de
+    // dibujar y lo recupera al restaurarse; aquí se rehacen el entorno de reflejos y el posproceso,
+    // que son imágenes renderizadas y no se pueden volver a subir solas.
+    this.canvas.addEventListener('webglcontextlost', () => { this.contextLost = true; console.warn('WebGL: contexto perdido'); });
+    this.canvas.addEventListener('webglcontextrestored', () => {
+      this.contextLost = false;
+      this.buildEnvMap();
+      this.post.build(this.settings.quality);
+      this.post.setSize(window.innerWidth, window.innerHeight);
+    });
     document.addEventListener('visibilitychange', () => { if (document.hidden && this.state === 'play') this.pause(); });
     this.input.onPress((a) => this.onUIPress(a));
     this.applyZone(this.hero.x, true);
@@ -228,6 +228,20 @@ export class Game {
     // Primer fotograma: compilar materiales sin tirones posteriores
     this.renderer.compile(scene, this.camera.cam);
     this.state = 'title';
+  }
+
+  // Entorno de reflejos a partir del propio cielo (PMREM)
+  buildEnvMap() {
+    if (this.envRT) this.envRT.dispose();
+    const pm = new THREE.PMREMGenerator(this.renderer);
+    const envScene = new THREE.Scene();
+    const sky2 = buildSky();
+    sky2.scale.setScalar(0.1);
+    envScene.add(sky2);
+    this.envRT = pm.fromScene(envScene, 0.02, 0.1, 200);
+    this.scene.environment = this.envRT.texture;
+    pm.dispose();
+    sky2.geometry.dispose(); sky2.material.dispose();
   }
 
   onResize() {

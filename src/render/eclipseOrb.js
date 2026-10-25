@@ -62,7 +62,7 @@ function coreMaterial() {
         float a = atan(vP.z, vP.x);
         float sw = ofbm(vec3(a * 2.0 + uTime * 1.3 + vP.y * 3.0, vP.y * 4.0 - uTime * 0.7, ndv * 3.0));
         float vein = 1.0 - abs(ofbm(vP * 3.2 + vec3(0.0, uTime * 0.35, uTime * 0.2)) * 2.0 - 1.0);
-        vein = pow(vein, 14.0) * smoothstep(0.35, 0.9, uPower);
+        vein = pow(clamp(vein, 0.0, 1.0), 14.0) * smoothstep(0.35, 0.9, uPower);
         vec3 col = vec3(0.004, 0.002, 0.008) + uViolet * 0.05 * smoothstep(0.55, 0.85, sw) * (1.0 - ndv);
         float k = uPower * (1.0 + uPulse * 1.6);
         col += uViolet * vein * 0.9 * (0.5 + 0.5 * k);
@@ -89,7 +89,9 @@ function coronaMaterial() {
         float a = atan(q.y, q.x);
         float k = uPower * (1.0 + uPulse * 2.0);
         // anillo fino y brillante en el borde del disco, halo violeta y rayos irregulares
-        float ring = exp(-pow((r - 1.02) / 0.045, 2.0));
+        // sin pow(): con base negativa (dentro del disco) da NaN en las GPU de Apple
+        float rr = (r - 1.02) / 0.045;
+        float ring = exp(-rr * rr);
         float halo = exp(-max(r - 1.0, 0.0) * 2.4) * smoothstep(0.92, 1.02, r);
         float rays = ofbm(vec3(a * 5.0, r * 1.5 - uTime * 0.8, uTime * 0.3));
         rays = smoothstep(0.45, 0.9, rays) * exp(-max(r - 1.0, 0.0) * 1.3) * smoothstep(0.95, 1.1, r);
